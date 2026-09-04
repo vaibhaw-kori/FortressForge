@@ -4,7 +4,7 @@
  * Owns the kiosk state machine and renders the active screen. No backend
  * logic here: all I/O goes through `services/api.ts`.
  */
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrandMark } from './components/BrandMark';
 import { LanguagePill } from './components/LanguagePill';
 import { ResetCountdown } from './components/ResetCountdown';
@@ -98,7 +98,7 @@ export default function App() {
         dispatch({ type: 'BUSY', busy: false });
         dispatch({ type: 'READY' });
       } catch (err) {
-        dispatch({ type: 'ERROR', code: 'session_transition', message: 'Could not select experience.' });
+        dispatch({ type: 'ERROR', code: 'session_transition', message: 'session_transition' });
       }
     },
     [dispatch, state.language, state.selectedExperience],
@@ -115,13 +115,12 @@ export default function App() {
         if (!cap) throw new Error('camera_unavailable');
         dispatch({ type: 'CAPTURED', blob: cap.blob, dataUrl: cap.dataUrl });
       } catch (err) {
-        dispatch({ type: 'ERROR', code: 'capture_failed', message: 'Could not capture frame.' });
+        dispatch({ type: 'ERROR', code: 'capture_failed', message: 'capture_failed' });
       }
     },
   });
 
   // ---- Capture ----
-  const videoElRef = useRef<HTMLVideoElement | null>(null);
   const captureFromCamera = useCallback(async (): Promise<{ blob: Blob; dataUrl: string } | null> => {
     // Find the active <video> element rendered by the screen.
     const v = document.querySelector<HTMLVideoElement>('video.capture-frame__video');
@@ -144,22 +143,20 @@ export default function App() {
     if (!blob) return null;
     return { blob, dataUrl: canvas.toDataURL('image/jpeg', 0.92) };
   }, []);
-  void videoElRef;
 
   // ---- Upload + generate ----
-  const uploadProgressRef = useRef<number>(0);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const handleContinueFromCaptured = useCallback(async () => {
     if (!state.captureBlob || !sessionRef.current || !state.selectedExperience) return;
     dispatch({ type: 'UPLOAD_START' });
-    uploadProgressRef.current = 0;
+    setUploadProgress(0);
 
     const startedAt = performance.now();
     const tick = () => {
       const elapsed = performance.now() - startedAt;
       const pct = Math.min(0.95, elapsed / UPLOAD_FAKE_PROGRESS_MS);
-      uploadProgressRef.current = pct;
-      dispatch({ type: 'GENERATE_PROGRESS', progress: pct });
+      setUploadProgress(pct);
     };
     const progressTimer = window.setInterval(tick, 80);
 
@@ -175,6 +172,7 @@ export default function App() {
       // Non-blocking: job creation returns immediately (201), worker processes async
       const job = await api.createJob(sessionRef.current, state.selectedExperience.id);
       window.clearInterval(progressTimer);
+      setUploadProgress(1);
       dispatch({ type: 'GENERATE_START', job });
     } catch (err) {
       window.clearInterval(progressTimer);
@@ -239,7 +237,7 @@ export default function App() {
   // ---- Helpers exposed to UI ----
   const resetAll = useCallback(() => {
     sessionRef.current = null;
-    uploadProgressRef.current = 0;
+    setUploadProgress(0);
     dispatch({ type: 'NEXT_VISITOR' });
   }, [dispatch]);
 
@@ -301,7 +299,7 @@ export default function App() {
           />
         ) : null}
         {screen === 'UPLOADING' ? (
-          <UploadingScreen language={state.language} progress={uploadProgressRef.current} />
+          <UploadingScreen language={state.language} progress={uploadProgress} />
         ) : null}
         {screen === 'GENERATING' ? (
           <GeneratingScreen language={state.language} progress={state.jobProgress} state={state.job?.state ?? null} />
@@ -316,6 +314,7 @@ export default function App() {
           <ResetCountdown
             seconds={RESET_DELAY_SECONDS}
             message={t('reset.title')}
+            subtitle={t('reset.subtitle')}
             onDone={() => {
               sessionRef.current = null;
               dispatch({ type: 'NEXT_VISITOR' });
@@ -335,7 +334,7 @@ export default function App() {
 
       <footer className="stage__footer">
         <span className="muted">{eyebrow}</span>
-        <span className="muted">AURA Display 1 · kiosk</span>
+        <span className="muted">AURA — Dubai</span>
       </footer>
     </main>
   );

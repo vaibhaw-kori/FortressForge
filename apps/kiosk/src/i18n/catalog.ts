@@ -33,6 +33,7 @@ export type KioskKey =
   | 'countdown.hold'
   | 'countdown.cancel'
   | 'captured.review'
+  | 'captured.title'
   | 'captured.retake'
   | 'captured.continue'
   | 'uploading.title'
@@ -85,6 +86,7 @@ export const en: Record<KioskKey, string> = {
   'countdown.hold': 'Hold still…',
   'countdown.cancel': 'Cancel',
   'captured.review': 'Reviewing your capture',
+  'captured.title': 'Look good?',
   'captured.retake': 'Retake',
   'captured.continue': 'Continue',
   'uploading.title': 'Uploading',
@@ -138,6 +140,7 @@ export const ar: Record<KioskKey, string> = {
   'countdown.hold': 'حافظ على ثباتك…',
   'countdown.cancel': 'إلغاء',
   'captured.review': 'مراجعة الصورة',
+  'captured.title': 'هل تبدو جيدة؟',
   'captured.retake': 'إعادة الالتقاط',
   'captured.continue': 'متابعة',
   'uploading.title': 'جاري الرفع',

@@ -1,17 +1,21 @@
 import { ReactNode } from 'react';
 
 interface Props {
-  code?: string;
+  title: ReactNode;
   message: ReactNode;
   retry?: ReactNode;
   reset?: ReactNode;
 }
 
-export function ErrorPanel({ code, message, retry, reset }: Props) {
+/**
+ * Guest-facing error card. Only localized title/message are rendered —
+ * technical codes are never shown to visitors.
+ */
+export function ErrorPanel({ title, message, retry, reset }: Props) {
   return (
     <div className="error-panel" role="alert">
-      {code ? <div className="error-panel__code">{code}</div> : null}
-      <div style={{ fontSize: 20, lineHeight: 1.4 }}>{message}</div>
+      <div className="error-panel__title">{title}</div>
+      <div className="error-panel__message">{message}</div>
       <div className="row" style={{ marginTop: 22, justifyContent: 'center' }}>
         {retry}
         {reset}

@@ -1,155 +1,45 @@
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+import { render } from '@testing-library/react';
 import { StageOverlay } from './StageOverlay';
-import type { ReelItem, ReelPolicyConfig } from '@aura/reel';
+import type { ReelItem } from '@aura/reel';
 
 const items: ReelItem[] = [
   { id: 'a', kind: 'curated', src: '/videos/a.mp4', duration_sec: 10, title: 'Alpha' },
   { id: 'g1', kind: 'generated', src: '/generated/g1.mp4', duration_sec: 4, title: 'Gen 1' },
 ];
 
-const policy: ReelPolicyConfig = { defaultInsert: 'queued' };
-
-describe('StageOverlay', () => {
-  it('renders current title and kind', () => {
-    render(
-      <StageOverlay
-        current={items[0]!}
-        playlist={items}
-        policy={policy}
-        onPolicyChange={() => {}}
-        wsStatus="open"
-        isFullscreen={false}
-        onToggleFullscreen={() => {}}
-      />,
-    );
-    expect(screen.getByText(/Alpha/)).toBeTruthy();
-    expect(screen.getByText(/curated/)).toBeTruthy();
-  });
-
-  it('renders idle when no current', () => {
-    render(
-      <StageOverlay
-        current={null}
-        playlist={[]}
-        policy={policy}
-        onPolicyChange={() => {}}
-        wsStatus="connecting"
-        isFullscreen={false}
-        onToggleFullscreen={() => {}}
-      />,
-    );
-    expect(screen.getByText(/Idle/)).toBeTruthy();
-  });
-
-  it('renders ws status', () => {
-    render(
-      <StageOverlay
-        current={null}
-        playlist={[]}
-        policy={policy}
-        onPolicyChange={() => {}}
-        wsStatus="open"
-        isFullscreen={false}
-        onToggleFullscreen={() => {}}
-      />,
-    );
-    expect(screen.getByText(/WS: open/)).toBeTruthy();
-  });
-
-  it('renders playlist dots + count', () => {
-    const { container } = render(
-      <StageOverlay
-        current={items[0]!}
-        playlist={items}
-        policy={policy}
-        onPolicyChange={() => {}}
-        wsStatus="open"
-        isFullscreen={false}
-        onToggleFullscreen={() => {}}
-      />,
-    );
+describe('StageOverlay (presentation chrome)', () => {
+  it('renders progress dots with active + generated markers, no text chrome', () => {
+    const { container } = render(<StageOverlay current={items[0]!} playlist={items} />);
     expect(container.querySelectorAll('.stage-playlist__dot').length).toBe(2);
-    expect(screen.getByText('2 items')).toBeTruthy();
-    // active dot for current
     expect(container.querySelector('.stage-playlist__dot--active')).not.toBeNull();
-    // generated marker
     expect(container.querySelector('.stage-playlist__dot--generated')).not.toBeNull();
+    // No developer chrome: no titles, counts, status, or controls
+    const text = container.textContent ?? '';
+    for (const banned of ['Alpha', 'Gen 1', 'curated', 'generated', 'items', 'WS:', 'Idle', 'Fullscreen', 'Queued']) {
+      expect(text).not.toContain(banned);
+    }
   });
 
-  it('empty playlist shows 0 items', () => {
-    render(
-      <StageOverlay
-        current={null}
-        playlist={[]}
-        policy={policy}
-        onPolicyChange={() => {}}
-        wsStatus="open"
-        isFullscreen={false}
-        onToggleFullscreen={() => {}}
-      />,
-    );
-    expect(screen.getByText('0 items')).toBeTruthy();
+  it('renders nothing textual when idle', () => {
+    const { container } = render(<StageOverlay current={null} playlist={[]} />);
+    expect(container.querySelector('.stage-overlay')).not.toBeNull();
+    expect(container.querySelectorAll('.stage-playlist__dot').length).toBe(0);
+    expect(container.querySelector('button, select')).toBeNull();
   });
 
-  it('policy change fires onPolicyChange', () => {
-    const onPolicyChange = vi.fn();
-    render(
-      <StageOverlay
-        current={null}
-        playlist={[]}
-        policy={policy}
-        onPolicyChange={onPolicyChange}
-        wsStatus="open"
-        isFullscreen={false}
-        onToggleFullscreen={() => {}}
-      />,
-    );
-    fireEvent.change(screen.getByLabelText('Insert policy'), { target: { value: 'priority' } });
-    expect(onPolicyChange).toHaveBeenCalledWith({ defaultInsert: 'priority' });
+  it('hidden prop fades the chrome', () => {
+    const { container, rerender } = render(<StageOverlay current={items[0]!} playlist={items} />);
+    expect(container.querySelector('.stage-overlay--hidden')).toBeNull();
+    rerender(<StageOverlay current={items[0]!} playlist={items} hidden />);
+    expect(container.querySelector('.stage-overlay--hidden')).not.toBeNull();
   });
 
-  it('fullscreen toggle button', () => {
-    const onToggle = vi.fn();
-    const { rerender } = render(
-      <StageOverlay
-        current={null}
-        playlist={[]}
-        policy={policy}
-        onPolicyChange={() => {}}
-        wsStatus="open"
-        isFullscreen={false}
-        onToggleFullscreen={onToggle}
-      />,
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Fullscreen' }));
-    expect(onToggle).toHaveBeenCalledTimes(1);
-    rerender(
-      <StageOverlay
-        current={null}
-        playlist={[]}
-        policy={policy}
-        onPolicyChange={() => {}}
-        wsStatus="open"
-        isFullscreen={true}
-        onToggleFullscreen={onToggle}
-      />,
-    );
-    expect(screen.getByRole('button', { name: 'Exit Fullscreen' })).toBeTruthy();
-  });
-
-  it('error-ish ws status still renders', () => {
-    render(
-      <StageOverlay
-        current={items[1]!}
-        playlist={items}
-        policy={policy}
-        onPolicyChange={() => {}}
-        wsStatus="error"
-        isFullscreen={false}
-        onToggleFullscreen={() => {}}
-      />,
-    );
-    expect(screen.getByText(/WS: error/)).toBeTruthy();
+  it('switching current moves the active dot', () => {
+    const { container, rerender } = render(<StageOverlay current={items[0]!} playlist={items} />);
+    const dots = () => Array.from(container.querySelectorAll('.stage-playlist__dot'));
+    expect(dots()[0]!.className).toContain('stage-playlist__dot--active');
+    rerender(<StageOverlay current={items[1]!} playlist={items} />);
+    expect(dots()[1]!.className).toContain('stage-playlist__dot--active');
   });
 });

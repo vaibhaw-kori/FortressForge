@@ -1,15 +1,16 @@
 import { ExperienceDTO } from '@aura/contracts';
-import { KioskKey } from '../i18n/catalog';
 
 interface Props {
   experience: ExperienceDTO;
   active: boolean;
   onSelect: (e: ExperienceDTO) => void;
-  durationKey: KioskKey;
-  chooseKey: KioskKey;
+  /** Pre-localized duration label, e.g. "4 seconds". */
+  durationLabel: string;
+  /** Pre-localized call-to-action, e.g. "Select". */
+  actionLabel: string;
 }
 
-export function ExperienceCard({ experience, active, onSelect, durationKey, chooseKey }: Props) {
+export function ExperienceCard({ experience, active, onSelect, durationLabel, actionLabel }: Props) {
   const [primary, accent] = [
     experience.theme.palette.primary ?? '#7c5cff',
     experience.theme.palette.accent ?? '#00d4ff',
@@ -31,9 +32,9 @@ export function ExperienceCard({ experience, active, onSelect, durationKey, choo
       <h3 className="card__title">{experience.display_name}</h3>
       <p className="card__desc">{experience.description}</p>
       <div className="card__meta">
-        <span className="card__chip">{durationKey === 'experience.duration' ? `${experience.duration_sec} s` : ''}</span>
+        <span className="card__chip">{durationLabel}</span>
         <span className="card__chip">{experience.visual_style.aesthetic}</span>
-        <span className="card__chip">{chooseKey}</span>
+        <span className="card__action">{actionLabel} →</span>
       </div>
     </button>
   );

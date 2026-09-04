@@ -113,8 +113,10 @@ export function VideoStage({ current, preloadSrc, onEnded, onError, muted = true
 
   if (!current) {
     return (
-      <div className="video-stage video-stage--empty">
-        <div className="video-stage__poster">No content — waiting for reel</div>
+      <div className="video-stage video-stage--empty" aria-label="Preparing presentation">
+        <div className="video-stage__ambient" aria-hidden>
+          <div className="video-stage__mark">A</div>
+        </div>
       </div>
     );
   }

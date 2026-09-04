@@ -106,7 +106,19 @@ class InferenceWorker:
     # ---- Per-job orchestration ----
 
     async def _process_one(self, job_id: str) -> None:
-        # Load job + provider
+        # Load job + provider. The HTTP layer enqueues before its request
+        # transaction commits, so a fast in-process worker can outrun the
+        # commit — retry briefly before giving up on a missing row.
+        job = None
+        for _ in range(7):
+            with session_scope() as db:
+                job = GenerationJobRepository(db).get(job_id)
+            if job is not None:
+                break
+            await asyncio.sleep(0.5)
+        if job is None:
+            log.warning("worker_no_such_job", job_id=job_id)
+            return
         with session_scope() as db:
             repo = GenerationJobRepository(db)
             job = repo.get(job_id)
@@ -618,6 +630,47 @@ class InferenceWorker:
         )
 
 
+_SAMPLE_CACHE: bytes | None = None
+
+
+def _curated_sample_bytes() -> bytes | None:
+    """Return cached curated-sample bytes (771KB) or None.
+
+    Resolves repo-root independent of CWD and caches in memory so every
+    mock job doesn't re-read from disk. Env AURA_CURATED_SAMPLE overrides.
+    """
+    import pathlib
+
+    global _SAMPLE_CACHE
+    if _SAMPLE_CACHE is not None:
+        return _SAMPLE_CACHE
+    candidates: list[pathlib.Path] = []
+    env = __import__("os").environ.get("AURA_CURATED_SAMPLE")
+    if env:
+        candidates.append(pathlib.Path(env))
+    here = pathlib.Path(__file__).resolve()
+    # .../services/backend/src/aura_backend/inference/worker.py -> repo root = parents[5]
+    try:
+        repo_root = here.parents[5]
+        candidates.append(repo_root / "apps/stage/public/videos/curated-a.mp4")
+    except IndexError:
+        pass
+    candidates += [
+        pathlib.Path("/workspace/FortressForge/apps/stage/public/videos/curated-a.mp4"),
+        pathlib.Path("apps/stage/public/videos/curated-a.mp4"),
+        pathlib.Path("./apps/stage/public/videos/curated-a.mp4"),
+        pathlib.Path("./data/curated-a.mp4"),
+    ]
+    for cand in candidates:
+        try:
+            if cand.exists():
+                _SAMPLE_CACHE = cand.read_bytes()
+                return _SAMPLE_CACHE
+        except Exception:
+            continue
+    return None
+
+
 def _ensure_generated_video_file(job_id: str, result: ProviderResult) -> tuple[str, str, int | None]:
     """Ensure a real MP4 file exists in storage for the given result.
 
@@ -648,17 +701,9 @@ def _ensure_generated_video_file(job_id: str, result: ProviderResult) -> tuple[s
 
     try:
         if ref.startswith("mock://"):
-            # Try to copy a curated sample video if available
-            candidates = [
-                pathlib.Path("apps/stage/public/videos/curated-a.mp4"),
-                pathlib.Path("E:/AI/project 4/New folder/apps/stage/public/videos/curated-a.mp4"),
-                pathlib.Path("./apps/stage/public/videos/curated-a.mp4"),
-                pathlib.Path("./data/curated-a.mp4"),
-            ]
-            for cand in candidates:
-                if cand.exists():
-                    raw_bytes = cand.read_bytes()
-                    break
+            # Copy the curated sample (cached, CWD-independent). Falls back
+            # to ffmpeg color-bars only if the sample is missing.
+            raw_bytes = _curated_sample_bytes()
             if raw_bytes is None:
                 # Fallback: try ffmpeg generation (color bars) if available
                 try:

@@ -3,26 +3,25 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { ErrorPanel } from './ErrorPanel';
 import { Button } from './Button';
 
-describe('ErrorPanel', () => {
-  it('renders message and code', () => {
-    render(<ErrorPanel code="upload_failed" message="Upload failed, please try again" />);
+describe('ErrorPanel (guest-facing)', () => {
+  it('renders title and message, never raw codes', () => {
+    render(<ErrorPanel title="Something went wrong" message="Please try again" />);
     expect(screen.getByRole('alert')).toBeTruthy();
-    expect(screen.getByText('upload_failed')).toBeTruthy();
-    expect(screen.getByText('Upload failed, please try again')).toBeTruthy();
+    expect(screen.getByText('Something went wrong')).toBeTruthy();
+    expect(screen.getByText('Please try again')).toBeTruthy();
   });
 
-  it('renders without code when not provided', () => {
-    const { container } = render(<ErrorPanel message="Something broke" />);
+  it('does not render a code element', () => {
+    const { container } = render(<ErrorPanel title="Oops" message="Try again" />);
     expect(container.querySelector('.error-panel__code')).toBeNull();
-    expect(screen.getByText('Something broke')).toBeTruthy();
   });
 
   it('retry callback fires when retry button clicked', () => {
     const onRetry = vi.fn();
     render(
       <ErrorPanel
-        code="ERR"
-        message="oops"
+        title="oops"
+        message="try again"
         retry={
           <Button onClick={onRetry}>
             Retry
@@ -39,7 +38,8 @@ describe('ErrorPanel', () => {
     const onReset = vi.fn();
     render(
       <ErrorPanel
-        message="failed"
+        title="failed"
+        message="sorry"
         retry={<button onClick={onRetry}>Try again</button>}
         reset={<button onClick={onReset}>Start over</button>}
       />,
@@ -50,34 +50,10 @@ describe('ErrorPanel', () => {
     expect(onReset).toHaveBeenCalledTimes(1);
   });
 
-  it('camera-denied variant shows permission message', () => {
-    render(
-      <ErrorPanel
-        code="camera_denied"
-        message="Camera access denied — please allow camera access"
-        retry={<button>Retry</button>}
-      />,
-    );
-    expect(screen.getByText(/Camera access denied/)).toBeTruthy();
-    expect(screen.getByText('camera_denied')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
-  });
-
-  it('camera-unavailable variant shows API message', () => {
-    render(
-      <ErrorPanel
-        code="camera_unavailable"
-        message="Camera API not available on this device"
-        retry={<button>Retry</button>}
-      />,
-    );
-    expect(screen.getByText(/Camera API not available/)).toBeTruthy();
-    expect(screen.getByText('camera_unavailable')).toBeTruthy();
-  });
-
   it('supports ReactNode message', () => {
     render(
       <ErrorPanel
+        title="Failed"
         message={
           <span>
             Failed with <strong>details</strong>

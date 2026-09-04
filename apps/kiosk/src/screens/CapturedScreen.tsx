@@ -14,7 +14,7 @@ export function CapturedScreen({ language, dataUrl, onRetake, onContinue }: Prop
     <div className="screen">
       <p className="screen__eyebrow">{t('captured.review')}</p>
       <h2 className="screen__title" style={{ fontSize: 'clamp(28px, 4vw, 44px)' }}>
-        {t('captured.review')}
+        {t('captured.title')}
       </h2>
       <div className="capture-frame" aria-label="captured preview">
         {dataUrl ? <img className="capture-frame__still" src={dataUrl} alt="captured" /> : null}

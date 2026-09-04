@@ -20,7 +20,10 @@ export function ExperienceScreen({ language, selectedId, onSelect, onBack }: Pro
       <div className="screen">
         <p className="screen__eyebrow">{t('error.title')}</p>
         <h2 className="screen__title">{t('error.network')}</h2>
-        <p className="screen__sub muted">{error.message}</p>
+        <p className="screen__sub muted">{t('error.subtitle')}</p>
+        <div className="row" style={{ marginTop: 12 }}>
+          <Button variant="ghost" onClick={onBack}>{t('experience.back')}</Button>
+        </div>
       </div>
     );
   }
@@ -39,8 +42,8 @@ export function ExperienceScreen({ language, selectedId, onSelect, onBack }: Pro
               experience={e}
               active={e.id === selectedId}
               onSelect={onSelect}
-              durationKey={'experience.duration'}
-              chooseKey={'experience.choose'}
+              durationLabel={t('experience.duration', { n: e.duration_sec })}
+              actionLabel={t('experience.choose')}
             />
           ))}
         </div>

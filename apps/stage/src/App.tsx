@@ -14,35 +14,21 @@ const DEFAULT_POLICY: ReelPolicyConfig = {
   maxGeneratedInQueue: 20,
 };
 
+/** Local installation films. No remote URLs: the wall must play offline. */
 const FALLBACK_CURATED: ReelItem[] = [
-  {
-    id: 'curated-bbb',
-    kind: 'curated',
-    src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-    duration_sec: 10,
-    title: 'Big Buck Bunny',
-  },
-  {
-    id: 'curated-sintel',
-    kind: 'curated',
-    src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',
-    duration_sec: 10,
-    title: 'Sintel',
-  },
-  {
-    id: 'curated-bbb-w3',
-    kind: 'curated',
-    src: 'https://www.w3schools.com/html/mov_bbb.mp4',
-    duration_sec: 10,
-    title: 'W3Schools BBB',
-  },
+  { id: 'curated-a', kind: 'curated', src: '/videos/curated-a.mp4', duration_sec: 10, title: 'AURA Reel' },
+  { id: 'curated-b', kind: 'curated', src: '/videos/curated-b.mp4', duration_sec: 10, title: 'AURA Reel' },
+  { id: 'curated-c', kind: 'curated', src: '/videos/curated-c.mp4', duration_sec: 10, title: 'AURA Reel' },
 ];
 
+/** Chrome auto-hide delay while a film plays (operator affordance). */
+const OVERLAY_IDLE_MS = 3000;
+
 export default function App() {
-  const [policy, setPolicy] = useState<ReelPolicyConfig>(DEFAULT_POLICY);
+  const [policy] = useState<ReelPolicyConfig>(DEFAULT_POLICY);
   const [initialPlaylist, setInitialPlaylist] = useState<ReelItem[] | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const { isFullscreen, toggle } = useFullscreen(containerRef);
+  const { toggle } = useFullscreen(containerRef);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,8 +45,10 @@ export default function App() {
 
   if (initialPlaylist === null) {
     return (
-      <div className="stage-root stage-root--loading">
-        <div className="stage-loader">Loading reel…</div>
+      <div className="stage-root stage-root--loading" aria-label="Preparing presentation">
+        <div className="stage-loader" aria-hidden>
+          <div className="stage-loader__mark">A</div>
+        </div>
       </div>
     );
   }
@@ -69,9 +57,7 @@ export default function App() {
     <StageReady
       initialPlaylist={initialPlaylist}
       policy={policy}
-      onPolicyChange={setPolicy}
       containerRef={containerRef}
-      isFullscreen={isFullscreen}
       onToggleFullscreen={toggle}
     />
   );
@@ -80,16 +66,12 @@ export default function App() {
 function StageReady({
   initialPlaylist,
   policy,
-  onPolicyChange,
   containerRef,
-  isFullscreen,
   onToggleFullscreen,
 }: {
   initialPlaylist: ReelItem[];
   policy: ReelPolicyConfig;
-  onPolicyChange: (p: ReelPolicyConfig) => void;
   containerRef: React.RefObject<HTMLDivElement>;
-  isFullscreen: boolean;
   onToggleFullscreen: () => void;
 }) {
   const { current, playlist, preloadSrc, enqueue, advance, jumpTo, handleError, setPolicy, setPlaylist } =
@@ -170,6 +152,7 @@ function StageReady({
   );
 
   const wsStatus = useDisplay2Socket(STAGE_ID, handleWsEvent);
+  void wsStatus;
 
   const onEnded = useCallback(() => {
     advance();
@@ -180,6 +163,25 @@ function StageReady({
       handleError(id);
     },
     [handleError],
+  );
+
+  // Presentation chrome: reveal briefly on film change or pointer
+  // activity, then fade so films play edge-to-edge.
+  const [chromeHidden, setChromeHidden] = useState(false);
+  const hideTimer = useRef<number | null>(null);
+  const pokeChrome = useCallback(() => {
+    setChromeHidden(false);
+    if (hideTimer.current) window.clearTimeout(hideTimer.current);
+    hideTimer.current = window.setTimeout(() => setChromeHidden(true), OVERLAY_IDLE_MS);
+  }, []);
+  useEffect(() => {
+    pokeChrome();
+  }, [current?.id, pokeChrome]);
+  useEffect(
+    () => () => {
+      if (hideTimer.current) window.clearTimeout(hideTimer.current);
+    },
+    [],
   );
 
   useEffect(() => {
@@ -196,17 +198,9 @@ function StageReady({
   }, [advance, onToggleFullscreen]);
 
   return (
-    <div ref={containerRef} className="stage-root">
+    <div ref={containerRef} className="stage-root" onMouseMove={pokeChrome} onDoubleClick={() => onToggleFullscreen()}>
       <VideoStage current={current} preloadSrc={preloadSrc} onEnded={onEnded} onError={onError} />
-      <StageOverlay
-        current={current}
-        playlist={playlist}
-        policy={policy}
-        onPolicyChange={onPolicyChange}
-        wsStatus={wsStatus}
-        isFullscreen={isFullscreen}
-        onToggleFullscreen={onToggleFullscreen}
-      />
+      <StageOverlay current={current} playlist={playlist} hidden={chromeHidden} />
     </div>
   );
 }

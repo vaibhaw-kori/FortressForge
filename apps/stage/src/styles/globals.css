@@ -34,12 +34,33 @@ html, body, #root {
 .stage-root--loading {
   display: grid;
   place-items: center;
-  color: var(--muted);
+  background: #000;
 }
-.stage-loader {
-  font-size: 18px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+/* Ambient brand mark while the reel prepares (also the empty state). */
+.stage-loader__mark,
+.video-stage__mark {
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #00d4ff 0%, #7c5cff 100%);
+  display: grid;
+  place-items: center;
+  color: white;
+  font-weight: 800;
+  font-size: 34px;
+  box-shadow: 0 0 48px rgba(0, 212, 255, 0.35);
+  animation: stage-breathe 2.6s ease-in-out infinite;
+}
+.video-stage__ambient {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+@keyframes stage-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.75; }
+  50% { transform: scale(1.07); opacity: 1; }
 }
 
 /* Video stage — double buffered */
@@ -82,7 +103,8 @@ html, body, #root {
   color: var(--muted);
 }
 
-/* Overlay — top/bottom bars, auto-hide in fullscreen after idle */
+/* Overlay — quiet chrome; auto-hidden during playback (see .stage-overlay--hidden).
+   Fullscreen also hides it until hover. */
 .stage-overlay {
   position: absolute;
   inset: 0;
@@ -92,7 +114,10 @@ html, body, #root {
   pointer-events: none;
   z-index: 2;
   padding: 28px 36px;
-  transition: opacity 400ms var(--ease);
+  transition: opacity 600ms var(--ease);
+}
+.stage-overlay--hidden {
+  opacity: 0;
 }
 .stage-overlay__top,
 .stage-overlay__bottom {

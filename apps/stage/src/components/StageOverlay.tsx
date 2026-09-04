@@ -1,43 +1,23 @@
-import type { ReelItem, ReelPolicyConfig } from '@aura/reel';
+import type { ReelItem } from '@aura/reel';
 
 interface Props {
   current: ReelItem | null;
   playlist: ReelItem[];
-  policy: ReelPolicyConfig;
-  onPolicyChange: (p: ReelPolicyConfig) => void;
-  wsStatus: string;
-  isFullscreen: boolean;
-  onToggleFullscreen: () => void;
+  /** When true the chrome fades out so the film plays edge-to-edge. */
+  hidden?: boolean;
 }
 
-export function StageOverlay({ current, playlist, policy, onPolicyChange, wsStatus, isFullscreen, onToggleFullscreen }: Props) {
+/**
+ * Minimal presentation chrome for the installation wall.
+ * No controls, no status text, no counts: a quiet brand mark plus
+ * progress dots. The parent auto-hides it during playback.
+ */
+export function StageOverlay({ current, playlist, hidden = false }: Props) {
   return (
-    <div className="stage-overlay">
+    <div className={`stage-overlay${hidden ? ' stage-overlay--hidden' : ''}`} aria-hidden>
       <div className="stage-overlay__top">
         <div className="brand">
-          <div className="brand__mark">AURA</div>
-          <div className="brand__meta">
-            <div className="brand__title">Display 2 — Reel</div>
-            <div className="brand__sub">
-              {current ? `${current.title ?? current.id} • ${current.kind}` : 'Idle'} • WS: {wsStatus}
-            </div>
-          </div>
-        </div>
-        <div className="stage-overlay__actions">
-          <select
-            value={policy.defaultInsert}
-            onChange={(e) => onPolicyChange({ ...policy, defaultInsert: e.target.value as ReelPolicyConfig['defaultInsert'] })}
-            className="stage-select"
-            aria-label="Insert policy"
-          >
-            <option value="queued">Queued</option>
-            <option value="priority">Priority</option>
-            <option value="immediate">Immediate</option>
-            <option value="play-once">Play-once</option>
-          </select>
-          <button className="stage-btn" onClick={onToggleFullscreen}>
-            {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
-          </button>
+          <div className="brand__mark">A</div>
         </div>
       </div>
 
@@ -46,11 +26,9 @@ export function StageOverlay({ current, playlist, policy, onPolicyChange, wsStat
           {playlist.map((item) => (
             <span
               key={item.id}
-              className={`stage-playlist__dot ${item.id === current?.id ? 'stage-playlist__dot--active' : ''} ${item.kind === 'generated' ? 'stage-playlist__dot--generated' : ''}`}
-              title={`${item.title ?? item.id} (${item.kind})`}
+              className={`stage-playlist__dot${item.id === current?.id ? ' stage-playlist__dot--active' : ''}${item.kind === 'generated' ? ' stage-playlist__dot--generated' : ''}`}
             />
           ))}
-          <span className="stage-playlist__count">{playlist.length} items</span>
         </div>
       </div>
     </div>

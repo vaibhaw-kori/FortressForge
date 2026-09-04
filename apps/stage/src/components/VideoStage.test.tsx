@@ -25,9 +25,13 @@ describe('VideoStage', () => {
     document.head.querySelectorAll('link[rel="preload"]').forEach((el) => el.remove());
   });
 
-  it('empty state when current is null', () => {
-    render(<VideoStage current={null} preloadSrc={null} onEnded={() => {}} onError={() => {}} />);
-    expect(screen.getByText(/No content — waiting for reel/)).toBeTruthy();
+  it('empty state shows ambient brand mark, no developer text', () => {
+    const { container } = render(<VideoStage current={null} preloadSrc={null} onEnded={() => {}} onError={() => {}} />);
+    expect(container.querySelector('.video-stage__ambient')).not.toBeNull();
+    const text = container.textContent ?? '';
+    for (const banned of ['No content', 'waiting for reel', 'reel…', 'Loading']) {
+      expect(text).not.toContain(banned);
+    }
   });
 
   it('renders video src after current is set', async () => {

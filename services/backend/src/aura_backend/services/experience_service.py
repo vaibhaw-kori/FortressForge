@@ -35,6 +35,15 @@ class ExperienceService:
         self._seeded = True
 
     def list(self, *, enabled_only: bool = True) -> list[Experience]:
+        # Fast path (warm DB): single query, no seed check.
+        rows = self._repo.list(enabled_only=enabled_only)
+        if rows:
+            return rows
+        if self._seeded:
+            # Already seeded yet still empty: serve in-memory fallback.
+            return [e for e in SEED_EXPERIENCES if (not enabled_only or e.enabled)]
+        # Cold DB: seed once, then re-query (3 queries once per process,
+        # 1 query per call afterwards instead of 2 per call).
         self._ensure_seeded()
         rows = self._repo.list(enabled_only=enabled_only)
         if rows:
@@ -43,10 +52,16 @@ class ExperienceService:
         return [e for e in SEED_EXPERIENCES if (not enabled_only or e.enabled)]
 
     def get(self, experience_id: str) -> Experience:
-        self._ensure_seeded()
+        # Fast path: direct PK lookup first (1 query warm hit vs 2 before).
         exp = self._repo.get(experience_id)
         if exp is not None:
             return exp
+        if not self._seeded:
+            # Miss may mean cold DB: seed once, retry PK lookup.
+            self._ensure_seeded()
+            exp = self._repo.get(experience_id)
+            if exp is not None:
+                return exp
         # Last-ditch fallback for tests/legacy data.
         for e in SEED_EXPERIENCES:
             if e.id == experience_id:
