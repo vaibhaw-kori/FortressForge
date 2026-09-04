@@ -127,18 +127,20 @@ class WanGenerationConfig:
     preview_every_n_steps: int = 5
 
     def __post_init__(self):
-        # Validate and clamp parameters
-        self.num_inference_steps = max(
-            self.num_inference_steps_min,
-            min(self.num_inference_steps_max, self.num_inference_steps)
-        )
-        self.guidance_scale = max(
-            self.guidance_scale_min,
-            min(self.guidance_scale_max, self.guidance_scale)
-        )
-        self.fps = max(1, min(30, self.fps))
-        self.duration_sec = max(0.5, min(10.0, self.duration_sec))
-        self.num_frames = int(self.fps * self.duration_sec)
+        # NOTE: do NOT clamp here — validation is handled explicitly by
+        # validate_generation_config() so callers can detect bad input.
+        # Only derive num_frames from fps*duration when the caller left
+        # num_frames at its default (48) but customized fps/duration.
+        # If the caller explicitly set num_frames, preserve it so
+        # validation can reject out-of-range values.
+        default_frames = 48
+        fps_custom = (self.fps != 12)
+        dur_custom = (self.duration_sec != 4.0)
+        if self.num_frames == default_frames and (fps_custom or dur_custom):
+            try:
+                self.num_frames = int(self.fps * self.duration_sec)
+            except Exception:
+                pass
 
     def to_dict(self) -> dict:
         return {

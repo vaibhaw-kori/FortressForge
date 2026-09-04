@@ -146,6 +146,7 @@ class GenerationJobService:
         job = self.get(job_id)
         if job.state in (
             GenerationJobState.COMPLETED,
+            GenerationJobState.FAILED,
             GenerationJobState.CANCELLED,
             GenerationJobState.TIMEOUT,
         ):

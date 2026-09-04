@@ -2,5 +2,8 @@
   "name": "aura-workspace-root",
   "version": "0.1.0",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"]
+  "workspaces": ["apps/*", "packages/*"],
+  "overrides": {
+    "jsdom": "26.1.0"
+  }
 }

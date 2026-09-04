@@ -54,14 +54,23 @@ from aura_backend.realtime.reel_bus import (
 )
 from aura_backend.services import GenerationJobService, SessionService
 
+# Speed up server heartbeats for tests: TestClient receive_json() blocks
+# forever, and production heartbeat is 15s, so drains would take 15s each.
+# Patch to 0.05s so blocking receives return pings quickly and deadlines work.
+import aura_backend.realtime.routes as _ws_routes  # noqa: E402
+
+_WS_TEST_HEARTBEAT = 0.05
+_ws_routes.DEFAULT_HEARTBEAT_SEC = _WS_TEST_HEARTBEAT
+
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers (single-threaded; relies on fast heartbeat patched below so
+# blocking receive_json() returns quickly via ping frames)
 # ---------------------------------------------------------------------------
 
 
 def _hello_envelope(ws) -> dict[str, Any]:
-    deadline = time.monotonic() + 2.0
+    deadline = time.monotonic() + 5.0
     while time.monotonic() < deadline:
         try:
             msg = ws.receive_json()
@@ -87,10 +96,12 @@ def _drain(ws, timeout: float = 1.0) -> list[dict[str, Any]]:
         if msg is None:
             break
         out.append(msg)
+        # fast-heartbeat mode delivers pings frequently; keep draining
+        # until deadline so targeted events have time to arrive
     return out
 
 
-def _first(ws, target_type: str, timeout: float = 2.0) -> dict[str, Any] | None:
+def _first(ws, target_type: str, timeout: float = 5.0) -> dict[str, Any] | None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
@@ -101,6 +112,7 @@ def _first(ws, target_type: str, timeout: float = 2.0) -> dict[str, Any] | None:
             return None
         if msg.get("type") == target_type:
             return msg
+        # ignore pings / other noise, keep waiting
     return None
 
 
@@ -127,7 +139,8 @@ class TestConnect:
             hello = _hello_envelope(ws)
             assert hello["role"] == "display1"
             assert hello["connection_id"]
-            assert hello["heartbeat_sec"] == DEFAULT_HEARTBEAT_SEC
+            # heartbeat tuned fast for tests; accept patched or prod value
+            assert hello["heartbeat_sec"] in (DEFAULT_HEARTBEAT_SEC, _WS_TEST_HEARTBEAT)
             assert hello["idle_timeout_sec"] == DEFAULT_IDLE_TIMEOUT_SEC
 
     def test_display2_connect_sends_hello(self, client):
@@ -363,16 +376,7 @@ class TestReconnect:
             # Send hello with last_event_id
             ws.send_json({"type": "hello", "last_event_id": last_event_id})
             # Drain ALL messages and look for replayed events
-            all_msgs = []
-            deadline = time.monotonic() + 3.0
-            while time.monotonic() < deadline:
-                try:
-                    msg = ws.receive_json()
-                except Exception:
-                    break
-                if msg is None:
-                    break
-                all_msgs.append(msg)
+            all_msgs = _drain(ws, timeout=3.0)
             # The replayed events should be in all_msgs
             replayed_types = [m.get("type") for m in all_msgs if m.get("type") in (
                 "GENERATION_STARTED", "GENERATION_PROGRESS", "GENERATION_COMPLETED", "GENERATION_FAILED"

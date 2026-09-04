@@ -122,6 +122,14 @@ export class ReelManager {
   ): { accepted: boolean; reason: string; shouldInterrupt: boolean } {
     const p = policy ?? this.policy.defaultInsert;
 
+    // Guard: corrupt item (missing id or empty src) — rejected, never queued.
+    if (!item || typeof item.id !== 'string' || item.id.length === 0) {
+      return { accepted: false, reason: 'invalid_id', shouldInterrupt: false };
+    }
+    if (typeof item.src !== 'string' || item.src.trim().length === 0) {
+      return { accepted: false, reason: 'invalid_src', shouldInterrupt: false };
+    }
+
     // Guard: duplicate id
     if (this.playlist.some((i) => i.id === item.id)) {
       return { accepted: false, reason: 'duplicate', shouldInterrupt: false };

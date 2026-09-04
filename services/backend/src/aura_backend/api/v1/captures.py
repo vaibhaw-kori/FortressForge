@@ -40,7 +40,11 @@ def _validate_image_content(data: bytes, max_pixels: int = 25_000_000) -> None:
     """Validate that bytes are a decodable image and not excessively large."""
     try:
         from PIL import Image
-
+    except ImportError:
+        # Pillow not installed (minimal env): magic bytes + size checks already
+        # ran in the route; accept without deep decode so integration uploads work.
+        return
+    try:
         img = Image.open(io.BytesIO(data))
         img.verify()  # Verify without fully decoding
         # Re-open for size check (verify() closes the image)

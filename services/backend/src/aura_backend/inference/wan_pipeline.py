@@ -26,9 +26,31 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-import torch
-import torchvision.transforms as T
-from PIL import Image
+try:
+    import torch  # type: ignore[import-not-found]
+    _TORCH_AVAILABLE = True
+except ImportError:  # pragma: no cover - CI without GPU extras
+    torch = None  # type: ignore[assignment]
+    _TORCH_AVAILABLE = False
+
+try:
+    import torchvision.transforms as T  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover
+    T = None  # type: ignore[assignment]
+
+try:
+    from PIL import Image  # type: ignore[import-not-found]
+    _PIL_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    Image = None  # type: ignore[assignment]
+    _PIL_AVAILABLE = False
+
+
+def _require_torch() -> None:
+    if not _TORCH_AVAILABLE or torch is None:
+        raise ImportError(
+            "wan-local pipeline stages requiring torch need GPU extras: pip install -e '.[gpu]'"
+        )
 
 from .wan_config import (
     WanGenerationConfig,
@@ -54,14 +76,16 @@ from ..errors import (
 from ..domain.video_asset import VideoAsset, VideoCodec
 from ..storage import get_storage
 
-# Lazy import for heavy dependencies
+# Lazy import for heavy dependencies (optional)
 try:
-    from diffusers import WanPipeline
-    import torch
-    from PIL import Image
-    import numpy as np
-except ImportError:
-    pass
+    from diffusers import WanPipeline  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover
+    WanPipeline = None  # type: ignore[assignment]
+
+try:
+    import numpy as np  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover
+    np = None  # type: ignore[assignment]
 
 
 @dataclass
@@ -174,13 +198,35 @@ class InputValidationStage(PipelineStage):
 # Stage 2: Image Preprocessing
 # ============================================================
 
-class ImagePreprocessingStage:
+class ImagePreprocessingStage(PipelineStage):
     """Stage 2: Load and preprocess the captured image."""
     
     name = "image_preprocessing"
     required = True
     
     def __call__(self, ctx: "PipelineContext") -> "PipelineContext":
+        # Reject empty/invalid capture_ref without requiring torch.
+        if not ctx.capture_ref:
+            return self._handle_error(
+                ctx, ValidationFailed("Missing capture reference"), "Image preprocessing failed"
+            )
+        # Torch-dependent path requires GPU extras; raise informative ImportError.
+        try:
+            _require_torch()
+        except ImportError as e:
+            return self._handle_error(ctx, e, "Image preprocessing failed")
+        if not _PIL_AVAILABLE or Image is None:
+            return self._handle_error(
+                ctx,
+                ImportError("image preprocessing requires Pillow: pip install Pillow"),
+                "Image preprocessing failed",
+            )
+        if T is None:
+            return self._handle_error(
+                ctx,
+                ImportError("image preprocessing requires torchvision: pip install -e '.[gpu]'"),
+                "Image preprocessing failed",
+            )
         try:
             # Load image from storage
             storage = get_storage()
@@ -223,7 +269,7 @@ class ImagePreprocessingStage:
 # Stage 3: Reference Preparation
 # ============================================================
 
-class ReferencePreparationStage:
+class ReferencePreparationStage(PipelineStage):
     """Stage 3: Prepare reference image and conditioning."""
     
     name = "reference_preparation"
@@ -231,6 +277,7 @@ class ReferencePreparationStage:
     
     def __call__(self, ctx: "PipelineContext") -> "PipelineContext":
         try:
+            _require_torch()
             # Prepare the capture tensor for the model
             # Move to correct device and dtype
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -258,7 +305,7 @@ class ReferencePreparationStage:
 # Stage 4: Experience Configuration
 # ============================================================
 
-class ExperienceConfigurationStage:
+class ExperienceConfigurationStage(PipelineStage):
     """Stage 4: Build generation config from experience."""
     
     name = "experience_configuration"
@@ -308,7 +355,7 @@ class ExperienceConfigurationStage:
 # Stage 5: Model Loading
 # ============================================================
 
-class ModelLoadingStage:
+class ModelLoadingStage(PipelineStage):
     """Stage 5: Load or get cached model."""
     
     name = "model_loading"
@@ -319,6 +366,10 @@ class ModelLoadingStage:
         self._loader: Optional[WanModelLoader] = None
     
     def __call__(self, ctx: "PipelineContext") -> "PipelineContext":
+        try:
+            _require_torch()
+        except ImportError as e:
+            return self._handle_error(ctx, e, "Model loading failed")
         # Try loading with OOM retry logic
         for oom_retry in range(self.max_oom_retries + 1):
             try:
@@ -363,7 +414,7 @@ class ModelLoadingStage:
 # Stage 6: Inference
 # ============================================================
 
-class InferenceStage:
+class InferenceStage(PipelineStage):
     """Stage 6: Run the actual video generation inference."""
     
     name = "inference"
@@ -371,9 +422,13 @@ class InferenceStage:
     max_oom_retries = 2
     
     def __call__(self, ctx: "PipelineContext") -> "PipelineContext":
+        try:
+            _require_torch()
+        except ImportError as e:
+            return self._handle_error(ctx, e, "Inference failed")
         pipeline = ctx.pipeline
         if not pipeline:
-            raise RuntimeError("Pipeline not loaded")
+            return self._handle_error(ctx, RuntimeError("Pipeline not loaded"), "Inference failed")
         
         # Prepare generation arguments
         gen_kwargs = {
@@ -466,13 +521,29 @@ class InferenceStage:
 # Stage 7: Post-Processing
 # ============================================================
 
-class PostProcessingStage:
+class PostProcessingStage(PipelineStage):
     """Stage 7: Post-process generated frames."""
     
     name = "post_processing"
     required = True
     
     def __call__(self, ctx: "PipelineContext") -> "PipelineContext":
+        try:
+            _require_torch()
+        except ImportError as e:
+            return self._handle_error(ctx, e, "Post-processing failed")
+        if np is None:
+            return self._handle_error(
+                ctx,
+                ImportError("post-processing requires numpy: pip install numpy"),
+                "Post-processing failed",
+            )
+        if not _PIL_AVAILABLE or Image is None:
+            return self._handle_error(
+                ctx,
+                ImportError("post-processing requires Pillow: pip install Pillow"),
+                "Post-processing failed",
+            )
         try:
             frames = ctx.video_frames
             if not frames:
@@ -510,7 +581,7 @@ class PostProcessingStage:
 # Stage 8: Video Encoding
 # ============================================================
 
-class VideoEncodingStage:
+class VideoEncodingStage(PipelineStage):
     """Stage 8: Encode frames to video file."""
     
     name = "video_encoding"
@@ -518,8 +589,17 @@ class VideoEncodingStage:
     
     def __call__(self, ctx: "PipelineContext") -> "PipelineContext":
         try:
+            import importlib.util as _ilu
+
+            if _ilu.find_spec("cv2") is None:
+                raise ImportError(
+                    "video encoding requires opencv: pip install -e '.[gpu]'"
+                )
             import cv2
-            import numpy as np
+            if np is None:
+                raise ImportError("video encoding requires numpy: pip install numpy")
+            if not _PIL_AVAILABLE or Image is None:
+                raise ImportError("video encoding requires Pillow: pip install Pillow")
             
             frames = ctx.video_frames
             if not frames:
@@ -553,7 +633,7 @@ class VideoEncodingStage:
             for frame in ctx.video_frames:
                 if isinstance(frame, Image.Image):
                     frame = cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR)
-                elif isinstance(frame, torch.Tensor):
+                elif torch is not None and isinstance(frame, torch.Tensor):
                     frame = frame.cpu().numpy()
                     frame = (frame * 255).astype(np.uint8)
                     frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
@@ -604,7 +684,7 @@ class VideoEncodingStage:
 # Stage 9: Output Validation
 # ============================================================
 
-class OutputValidationStage:
+class OutputValidationStage(PipelineStage):
     """Stage 9: Validate generated video output."""
     
     name = "output_validation"
@@ -612,6 +692,12 @@ class OutputValidationStage:
     
     def __call__(self, ctx: "PipelineContext") -> "PipelineContext":
         try:
+            import importlib.util as _ilu2
+
+            if _ilu2.find_spec("cv2") is None:
+                raise ImportError(
+                    "output validation requires opencv: pip install -e '.[gpu]'"
+                )
             import cv2
             
             if not ctx.output_path or not Path(ctx.output_path).exists():
@@ -677,7 +763,7 @@ class OutputValidationStage:
 # Stage 10: Cleanup
 # ============================================================
 
-class CleanupStage:
+class CleanupStage(PipelineStage):
     """Stage 10: Cleanup temporary files and resources."""
     
     name = "cleanup"
@@ -686,9 +772,13 @@ class CleanupStage:
     def __call__(self, ctx: "PipelineContext") -> "PipelineContext":
         try:
             # Clear CUDA cache
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                torch.cuda.ipc_collect()
+            if torch is not None:
+                try:
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                        torch.cuda.ipc_collect()
+                except Exception:
+                    pass
             
             # Force garbage collection
             gc.collect()
@@ -892,6 +982,22 @@ class WanPipelineFactory:
         provider_input: Any,  # ProviderInput from base
     ) -> WanInferencePipeline:
         """Create pipeline from provider input."""
+        # Resolve width/height from explicit fields or a "WxH" resolution string.
+        width, height = 720, 1280
+        if getattr(provider_input, "width", None) and getattr(provider_input, "height", None):
+            try:
+                width = int(provider_input.width)
+                height = int(provider_input.height)
+            except Exception:
+                pass
+        else:
+            res = getattr(provider_input, "resolution", None)
+            if isinstance(res, str) and "x" in res.lower():
+                try:
+                    w_s, h_s = res.lower().split("x", 1)
+                    width, height = int(w_s), int(h_s)
+                except Exception:
+                    pass
         # Build generation config from provider input
         gen_config = WanGenerationConfig(
             prompt="",  # Will be filled by ExperienceConfigurationStage
@@ -902,7 +1008,8 @@ class WanPipelineFactory:
             seed=provider_input.fixed_seed,
             fps=provider_input.fps or 12,
             duration_sec=provider_input.duration_sec or 4.0,
-            resolution=f"{provider_input.width}x{provider_input.height}" if hasattr(provider_input, 'width') else "720x1280",
+            width=width,
+            height=height,
             seed_policy=provider_input.seed_policy or "visitor_derived",
             fixed_seed=provider_input.fixed_seed,
             strength=provider_input.strength or 0.7,

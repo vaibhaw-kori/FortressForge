@@ -16,7 +16,6 @@ from .inference import get_provider_registry
 from .inference.mock_provider import MockVideoGenerationProvider
 from .inference.queue import get_queue
 from .inference.worker import get_worker
-from .inference.wan_provider import register_wan_provider
 from .logging import configure_logging, get_logger
 from .realtime.routes import router as realtime_router
 

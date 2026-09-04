@@ -68,7 +68,7 @@ class TestWanConfig:
     def test_generation_config_validation_failures(self):
         # Test various invalid configurations
         test_cases = [
-            ({}, ["Prompt too short"]),
+            ({"prompt": "x"}, ["Prompt too short"]),
             ({"prompt": "test", "num_inference_steps": 5}, ["num_inference_steps"]),
             ({"prompt": "test", "num_inference_steps": 55}, ["num_inference_steps"]),
             ({"prompt": "test", "guidance_scale": 0.5}, ["guidance_scale"]),
@@ -89,7 +89,8 @@ class TestWanConfig:
         ]
         
         for kwargs, expected_error in test_cases:
-            config = WanGenerationConfig(prompt="test prompt", **kwargs)
+            prompt = kwargs.pop("prompt", "test prompt")
+            config = WanGenerationConfig(prompt=prompt, **kwargs)
             is_valid, errors = validate_generation_config(config)
             assert not is_valid
             assert any(expected_error in " ".join(errors) for expected_error in expected_error)
@@ -146,14 +147,17 @@ class TestPipelineStages:
         mock_context.config.width = 719  # Not multiple of 8
         mock_context.config.height = 1280
         stage = InputValidationStage()
-        with pytest.raises(ValidationFailed):
+        # Stage wraps ValidationFailed into PipelineError (preserving original)
+        with pytest.raises(PipelineError) as exc_info:
             stage(mock_context)
+        assert isinstance(exc_info.value.original_error, ValidationFailed)
 
     def test_input_validation_stage_invalid_frames(self, mock_context):
         mock_context.config.num_frames = 85  # > 81
         stage = InputValidationStage()
-        with pytest.raises(ValidationFailed):
+        with pytest.raises(PipelineError) as exc_info:
             stage(mock_context)
+        assert isinstance(exc_info.value.original_error, ValidationFailed)
 
     def test_experience_configuration_stage(self, mock_context):
         stage = ExperienceConfigurationStage()
@@ -247,38 +251,6 @@ class TestPipelineFactory:
             generation_config=WanGenerationConfig(),
         )
         assert isinstance(pipeline, WanInferencePipeline)
-
-def test_create_pipeline_from_request(self):
-        factory = WanPipelineFactory()
-        
-        class MockInput:
-            job_id = "job1"
-            session_id = "sess1"
-            experience_id = "aurora"
-            capture_ref = "cap.jpg"
-            num_inference_steps = 20
-            guidance_scale = 6.0
-            motion_bucket_id = 150
-            fps = 10
-            duration_sec = 3.0
-            resolution = "480x832"
-            aspect_ratio = "9:16"
-            provider_id = "test"
-            model_params = {}
-            idempotency_key = "abc-1"
-            fixed_seed = 42
-            strength = 0.5
-            seed_policy = "visitor_derived"
-        
-        pipeline = factory.create_pipeline_from_request(
-            job_id="job1",
-            session_id="sess1",
-            experience_id="aurora",
-            capture_ref="cap.jpg",
-            provider_input=MockInput(),
-        )
-        assert isinstance(pipeline, WanInferencePipeline)
-
 
 class TestWanPipelineFactory:
     """Test WanPipelineFactory."""

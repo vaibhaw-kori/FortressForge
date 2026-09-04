@@ -49,10 +49,19 @@ function kioskHeaders(): Record<string, string> {
   return token ? { 'X-Kiosk-Token': token } : {};
 }
 
+async function doFetch(input: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (err) {
+    const message = err instanceof Error ? err.message || 'Network error' : 'Network error';
+    throw new ApiError('network_error', message, 0);
+  }
+}
+
 export const api = {
   async listExperiences(language: string): Promise<ExperienceDTO[]> {
     if (USE_MOCKS) return mockApi.listExperiences(language);
-    const res = await fetch(`${API_PATHS.experiences}?language=${encodeURIComponent(language)}`, {
+    const res = await doFetch(`${API_PATHS.experiences}?language=${encodeURIComponent(language)}`, {
       headers: { ...kioskHeaders() },
     });
     const body = await jsonOrThrow<{ items: ExperienceDTO[] }>(res);
@@ -61,7 +70,7 @@ export const api = {
 
   async getExperience(id: string, language: string): Promise<ExperienceDTO> {
     if (USE_MOCKS) return mockApi.getExperience(id, language);
-    const res = await fetch(`${API_PATHS.experience(id)}?language=${encodeURIComponent(language)}`, {
+    const res = await doFetch(`${API_PATHS.experience(id)}?language=${encodeURIComponent(language)}`, {
       headers: { ...kioskHeaders() },
     });
     return jsonOrThrow<ExperienceDTO>(res);
@@ -69,7 +78,7 @@ export const api = {
 
   async createSession(language: string): Promise<SessionDTO> {
     if (USE_MOCKS) return mockApi.createSession(language);
-    const res = await fetch(API_PATHS.sessions, {
+    const res = await doFetch(API_PATHS.sessions, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...kioskHeaders() },
       body: JSON.stringify({ language }),
@@ -83,7 +92,7 @@ export const api = {
     extra: { language?: string; theme_id?: string } = {},
   ): Promise<SessionDTO> {
     if (USE_MOCKS) return mockApi.transitionSession(sessionId, to, extra);
-    const res = await fetch(API_PATHS.sessionTransition(sessionId), {
+    const res = await doFetch(API_PATHS.sessionTransition(sessionId), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...kioskHeaders() },
       body: JSON.stringify({ to, ...extra }),
@@ -95,7 +104,7 @@ export const api = {
     if (USE_MOCKS) return mockApi.uploadCapture(sessionId, blob);
     const fd = new FormData();
     fd.append('file', blob, 'capture.jpg');
-    const res = await fetch(API_PATHS.capture(sessionId), {
+    const res = await doFetch(API_PATHS.capture(sessionId), {
       method: 'POST',
       headers: { ...kioskHeaders() },
       body: fd,
@@ -108,7 +117,7 @@ export const api = {
     experienceId: string,
   ): Promise<GenerationJobDTO> {
     if (USE_MOCKS) return mockApi.createJob(sessionId, experienceId);
-    const res = await fetch(API_PATHS.jobs, {
+    const res = await doFetch(API_PATHS.jobs, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...kioskHeaders() },
       body: JSON.stringify({ session_id: sessionId, experience_id: experienceId }),
@@ -118,7 +127,7 @@ export const api = {
 
   async getJob(jobId: string): Promise<GenerationJobDTO> {
     if (USE_MOCKS) return mockApi.getJob(jobId);
-    const res = await fetch(API_PATHS.job(jobId), { headers: { ...kioskHeaders() } });
+    const res = await doFetch(API_PATHS.job(jobId), { headers: { ...kioskHeaders() } });
     return jsonOrThrow<GenerationJobDTO>(res);
   },
 };

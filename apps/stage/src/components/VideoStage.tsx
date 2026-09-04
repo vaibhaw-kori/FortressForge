@@ -36,7 +36,13 @@ export function VideoStage({ current, preloadSrc, onEnded, onError, muted = true
     const target = active === 'a' ? bRef : aRef;
     const setTargetSrc = active === 'a' ? setBSrc : setASrc;
 
-    // If same src already loaded, just ensure it plays
+    // If the active element already shows this src, nothing to do.
+    // (Without this guard the two buffers ping-pong forever once both
+    // hold the same src.)
+    const activeSrc = active === 'a' ? aSrc : bSrc;
+    if (activeSrc === current.src) return;
+
+    // If same src already preloaded in the inactive element, just flip.
     const existingSrc = active === 'a' ? bSrc : aSrc;
     if (existingSrc === current.src) {
       // Already preloaded - just flip

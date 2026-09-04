@@ -115,8 +115,9 @@ class MockVideoGenerationProvider(VideoGenerationProvider):
         if job is None:
             raise ProviderError("mock_no_such_job", f"No such mock job {handle.provider_job_id}")
         if job.state != PROVIDER_STATUS_SUCCEEDED or job.result is None:
-            raise ProviderError(  # noqa: F841 - details reserved
-                f"{job.error_code or 'mock_not_ready'}: {job.error_message or 'Mock job not ready'}",
+            raise ProviderError(
+                job.error_code or "mock_not_ready",
+                job.error_message or "Mock job not ready",
             )
         return job.result
 

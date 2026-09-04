@@ -16,7 +16,16 @@ from .providers.base import (
 )
 from .mock_provider import MockVideoGenerationProvider
 from .runpod_provider import RunPodVideoGenerationProvider
-from .wan_provider import WanVideoGenerationProvider, register_wan_provider
+
+try:  # Optional heavy deps (torch/diffusers) — only needed for wan-local
+    from .wan_provider import WanVideoGenerationProvider, register_wan_provider
+except ImportError:  # pragma: no cover - allows backend to run with mock provider
+    WanVideoGenerationProvider = None  # type: ignore[assignment]
+
+    def register_wan_provider(*args, **kwargs):  # type: ignore[no-redef]
+        raise ImportError(
+            "wan-local provider requires GPU extras: pip install -e '.[gpu]'"
+        )
 
 __all__ = [
     "PROVIDER_STATUS_CANCELLED",

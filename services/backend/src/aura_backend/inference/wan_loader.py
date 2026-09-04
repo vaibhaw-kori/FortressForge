@@ -16,7 +16,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Optional
 
-import torch
+try:
+    import torch  # type: ignore[import-not-found]
+    _TORCH_AVAILABLE = True
+except ImportError:  # pragma: no cover - CPU-only / CI without GPU extras
+    torch = None  # type: ignore[assignment]
+    _TORCH_AVAILABLE = False
 
 from .wan_config import (
     WanModelConfig,
@@ -38,6 +43,13 @@ warnings.filterwarnings("ignore", category=UserWarning, module="diffusers")
 
 # Lazy imports to avoid import-time overhead
 _torch = torch
+
+
+def _require_torch() -> None:
+    if not _TORCH_AVAILABLE or torch is None:
+        raise ImportError(
+            "wan-local provider requires GPU extras: pip install -e '.[gpu]'"
+        )
 
 
 @dataclass
@@ -114,14 +126,18 @@ class WanModelLoader:
         return self._warm
     
     @property
-    def device(self) -> torch.device:
+    def device(self) -> Any:
+        _require_torch()
         if self._device is None:
+            assert torch is not None
             self._device = torch.device(self.config.device if torch.cuda.is_available() else "cpu")
         return self._device
     
     @property
-    def dtype(self) -> torch.dtype:
+    def dtype(self) -> Any:
+        _require_torch()
         if self._dtype is None:
+            assert torch is not None
             precision_map = {
                 "fp16": torch.float16,
                 "bf16": torch.bfloat16,
