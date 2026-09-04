@@ -1,0 +1,63 @@
+"""Real-time event layer (WebSocket hub + protocol + relay)."""
+
+from .hub import (
+    WebSocketHub,
+    envelope,
+    get_hub,
+    reset_hub,
+    set_hub,
+)
+from .protocol import (
+    ClientMessageType,
+    Connection,
+    DEFAULT_HEARTBEAT_SEC,
+    DEFAULT_IDLE_TIMEOUT_SEC,
+    DEFAULT_REPLAY_BUFFER_SIZE,
+    DISPLAY1_EVENT_TYPES,
+    DISPLAY2_EVENT_TYPES,
+    OPERATOR_EVENT_TYPES,
+    PROTOCOL_VERSION,
+    WSRole,
+    channel_display1,
+    channel_display2,
+    channel_job,
+    channel_operator,
+    channel_session,
+    make_envelope,
+    parse_client_message,
+)
+from .relay import (
+    build_relay_handlers,
+    install_relay,
+    start_event_relay,
+    uninstall_relay,
+)
+
+__all__ = [
+    "ClientMessageType",
+    "Connection",
+    "DEFAULT_HEARTBEAT_SEC",
+    "DEFAULT_IDLE_TIMEOUT_SEC",
+    "DEFAULT_REPLAY_BUFFER_SIZE",
+    "DISPLAY1_EVENT_TYPES",
+    "DISPLAY2_EVENT_TYPES",
+    "OPERATOR_EVENT_TYPES",
+    "PROTOCOL_VERSION",
+    "WebSocketHub",
+    "WSRole",
+    "build_relay_handlers",
+    "channel_display1",
+    "channel_display2",
+    "channel_job",
+    "channel_operator",
+    "channel_session",
+    "envelope",
+    "get_hub",
+    "install_relay",
+    "make_envelope",
+    "parse_client_message",
+    "reset_hub",
+    "set_hub",
+    "start_event_relay",
+    "uninstall_relay",
+]

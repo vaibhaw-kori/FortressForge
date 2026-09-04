@@ -1,0 +1,205 @@
+:root {
+  --bg-0: #04050a;
+  --bg-1: #0b0d12;
+  --fg: #f7f9fc;
+  --muted: #8a93a6;
+  --accent: #00d4ff;
+  --line: rgba(255,255,255,0.08);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg-0);
+  color: var(--fg);
+  overflow: hidden;
+}
+
+/* Root stage — fills viewport, supports fullscreen */
+.stage-root {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: radial-gradient(120% 80% at 20% 10%, rgba(0,212,255,0.10) 0%, transparent 60%),
+              linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
+  display: grid;
+  place-items: center;
+}
+.stage-root--loading {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+.stage-loader {
+  font-size: 18px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* Video stage — double buffered */
+.video-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+}
+.video-stage--empty {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 20px;
+  letter-spacing: 0.06em;
+}
+.video-stage__video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 700ms var(--ease);
+  will-change: opacity;
+}
+.video-stage__video--active {
+  opacity: 1;
+}
+.video-stage__vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 60% at 50% 0%, rgba(0,212,255,0.10), transparent 60%),
+    linear-gradient(180deg, transparent 60%, rgba(0,0,0,0.55) 100%);
+}
+.video-stage__poster {
+  font-size: 18px;
+  color: var(--muted);
+}
+
+/* Overlay — top/bottom bars, auto-hide in fullscreen after idle */
+.stage-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+  z-index: 2;
+  padding: 28px 36px;
+  transition: opacity 400ms var(--ease);
+}
+.stage-overlay__top,
+.stage-overlay__bottom {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.brand__mark {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #00d4ff 0%, #7c5cff 100%);
+  display: grid;
+  place-items: center;
+  color: white;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  box-shadow: 0 0 24px rgba(0,212,255,0.35);
+}
+.brand__meta { line-height: 1.1; }
+.brand__title { font-weight: 700; letter-spacing: -0.01em; }
+.brand__sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+.stage-overlay__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.stage-select {
+  background: rgba(255,255,255,0.06);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+.stage-btn {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.06);
+  color: var(--fg);
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 200ms var(--ease), transform 200ms var(--ease);
+}
+.stage-btn:hover { background: rgba(255,255,255,0.10); transform: translateY(-1px); }
+.stage-btn:active { transform: translateY(0); }
+
+.stage-playlist {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  max-width: 70vw;
+}
+.stage-playlist__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.12);
+  transition: transform 200ms var(--ease), background 200ms var(--ease), box-shadow 200ms var(--ease);
+}
+.stage-playlist__dot--active {
+  background: var(--accent);
+  box-shadow: 0 0 12px rgba(0,212,255,0.6);
+  transform: scale(1.4);
+}
+.stage-playlist__dot--generated {
+  border-color: rgba(124,92,255,0.6);
+}
+.stage-playlist__dot--generated.stage-playlist__dot--active {
+  background: #7c5cff;
+  box-shadow: 0 0 12px rgba(124,92,255,0.6);
+}
+.stage-playlist__count {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+}
+
+/* Fullscreen-specific: hide overlay after idle — shown on hover */
+.stage-root:fullscreen .stage-overlay {
+  opacity: 0;
+  transition-delay: 1200ms;
+}
+.stage-root:fullscreen:hover .stage-overlay {
+  opacity: 1;
+  transition-delay: 0ms;
+}
+
+/* Responsive tweaks for large-format projection */
+@media (min-width: 1920px) {
+  .stage-overlay { padding: 40px 56px; }
+  .brand__title { font-size: 20px; }
+  .stage-playlist__dot { width: 12px; height: 12px; }
+}

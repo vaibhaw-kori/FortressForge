@@ -1,0 +1,46 @@
+# Node
+node_modules/
+.pnp.*
+.yarn/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Local data
+data/
+storage/local/
+*.sqlite
+*.sqlite-journal
+*.db
+
+# Build artifacts
+*.log
+logs/
+*.tsbuildinfo
+src/*.egg-info/

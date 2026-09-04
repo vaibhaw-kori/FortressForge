@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aura-inference"
+version = "0.1.0"
+description = "AURA inference abstraction (RunPod + self-hosted GPU worker)"
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "Proprietary" }
+dependencies = [
+  "pydantic>=2.7,<3.0",
+  "httpx>=0.27,<1.0",
+]
+
+[project.optional-dependencies]
+gpu = [
+  "torch>=2.2",
+  "diffusers>=0.27",
+  "transformers>=4.42",
+  "accelerate>=0.32",
+  "opencv-python>=4.10",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["aura_inference*"]
