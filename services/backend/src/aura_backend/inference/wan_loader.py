@@ -213,18 +213,23 @@ class WanModelLoader:
             AutoencoderKLWan,
             UniPCMultistepScheduler,
         )
-        from transformers import T5EncoderModel, T5TokenizerFast
-        
+        # Wan 2.1 text encoder is UMT5 (model_type "umt5"), not plain T5.
+        try:
+            from transformers import UMT5EncoderModel as _TextEncoderClass
+        except ImportError:
+            from transformers import T5EncoderModel as _TextEncoderClass
+        from transformers import T5TokenizerFast
+
         # Determine model repo
         model_repo = self.config.local_model_path or DEFAULT_MODEL_REPO
-        
+
         # Load tokenizer and text encoder first (smallest)
         tokenizer = T5TokenizerFast.from_pretrained(
             model_repo,
             subfolder="tokenizer",
         )
-        
-        text_encoder = T5EncoderModel.from_pretrained(
+
+        text_encoder = _TextEncoderClass.from_pretrained(
             model_repo,
             subfolder="text_encoder",
             torch_dtype=self.dtype,
