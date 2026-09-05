@@ -244,10 +244,19 @@ class WanModelLoader:
             low_cpu_mem_usage=True,
         )
         
-        # Enable VAE tiling for memory efficiency
+        # Enable VAE tiling for memory efficiency (method name varies by
+        # diffusers version; slicing below is the guaranteed fallback).
         if self.config.enable_vae_tiling:
-            vae.enable_tiling()
-            vae.tile_size = self.config.vae_tile_size
+            if hasattr(vae, "enable_tiling"):
+                try:
+                    vae.enable_tiling()
+                except Exception:
+                    pass
+            if hasattr(vae, "tile_size"):
+                try:
+                    vae.tile_size = self.config.vae_tile_size
+                except Exception:
+                    pass
         
         # Load transformer (largest component)
         transformer = WanTransformer3DModel.from_pretrained(
