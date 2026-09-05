@@ -180,8 +180,8 @@ def main():
         seed=args.seed,
         fps=args.fps,
         duration_sec=args.duration,
-        resolution=f"{width}x{height}",
-        aspect_ratio=f"{width}:{height}",
+        width=width,
+        height=height,
     )
     
     # Run inference
