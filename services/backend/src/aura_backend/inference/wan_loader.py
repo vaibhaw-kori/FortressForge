@@ -229,12 +229,24 @@ class WanModelLoader:
             subfolder="tokenizer",
         )
 
-        text_encoder = _TextEncoderClass.from_pretrained(
-            model_repo,
-            subfolder="text_encoder",
-            torch_dtype=self.dtype,
-            low_cpu_mem_usage=True,
-        )
+        if _disk_offload:
+            text_encoder = _TextEncoderClass.from_pretrained(
+                model_repo,
+                subfolder="text_encoder",
+                torch_dtype=self.dtype,
+                device_map="auto",
+                max_memory={0: "1GiB", "cpu": "10GiB"},
+                offload_folder=_offload_folder,
+                offload_state_dict=True,
+                low_cpu_mem_usage=True,
+            )
+        else:
+            text_encoder = _TextEncoderClass.from_pretrained(
+                model_repo,
+                subfolder="text_encoder",
+                torch_dtype=self.dtype,
+                low_cpu_mem_usage=True,
+            )
         
         # Load VAE
         vae = AutoencoderKLWan.from_pretrained(
@@ -258,13 +270,36 @@ class WanModelLoader:
                 except Exception:
                     pass
         
-        # Load transformer (largest component)
-        transformer = WanTransformer3DModel.from_pretrained(
-            model_repo,
-            subfolder="transformer",
-            torch_dtype=self.dtype,
-            low_cpu_mem_usage=True,
-        )
+        # Load transformer (largest component, ~65GB on disk).
+        # When offload_to_cpu is set (small pods), stream weights with an
+        # accelerate device map + disk offload so RAM never holds it all.
+        _disk_offload = bool(self.config.offload_to_cpu)
+        _offload_folder = os.environ.get("AURA_WAN_OFFLOAD_FOLDER", "/workspace/.offload")
+        if _disk_offload:
+            try:
+                os.makedirs(_offload_folder, exist_ok=True)
+            except Exception:
+                import tempfile as _tf
+
+                _offload_folder = _tf.mkdtemp(prefix="aura_offload_")
+        if _disk_offload:
+            transformer = WanTransformer3DModel.from_pretrained(
+                model_repo,
+                subfolder="transformer",
+                torch_dtype=self.dtype,
+                device_map="auto",
+                max_memory={0: "11GiB", "cpu": "12GiB"},
+                offload_folder=_offload_folder,
+                offload_state_dict=True,
+                low_cpu_mem_usage=True,
+            )
+        else:
+            transformer = WanTransformer3DModel.from_pretrained(
+                model_repo,
+                subfolder="transformer",
+                torch_dtype=self.dtype,
+                low_cpu_mem_usage=True,
+            )
         
         # Load scheduler
         scheduler = UniPCMultistepScheduler.from_pretrained(
@@ -286,17 +321,25 @@ class WanModelLoader:
             scheduler=scheduler,
         )
         
-        # Move to device
-        pipeline = pipeline.to(self.device)
-        
-        # Enable VAE slicing for memory efficiency
-        pipeline.vae.enable_slicing()
-        
-        # Enable progressive CPU offload if configured
-        if self.config.enable_offload:
-            pipeline.enable_model_cpu_offload()
-        elif self.config.offload_to_cpu:
-            pipeline.enable_sequential_cpu_offload()
+        if _disk_offload:
+            # Already dispatched across CUDA/CPU/disk by accelerate; .to()
+            # and the offload toggles would conflict, so only slice the VAE.
+            try:
+                pipeline.vae.enable_slicing()
+            except Exception:
+                pass
+        else:
+            # Move to device
+            pipeline = pipeline.to(self.device)
+
+            # Enable VAE slicing for memory efficiency
+            pipeline.vae.enable_slicing()
+
+            # Enable progressive CPU offload if configured
+            if self.config.enable_offload:
+                pipeline.enable_model_cpu_offload()
+            elif self.config.offload_to_cpu:
+                pipeline.enable_sequential_cpu_offload()
         
         return ModelComponents(
             transformer=transformer,
