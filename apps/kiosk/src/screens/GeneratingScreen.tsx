@@ -34,12 +34,14 @@ function phaseKey(state: JobState | null): 'preparing' | 'queued' | 'processing'
 export function GeneratingScreen({ language, progress, state }: Props) {
   const { t } = useT(language);
   const phase = phaseKey(state);
+  const pct = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
   return (
     <div className="screen">
       <p className="screen__eyebrow">{t('generating.title')}</p>
       <h2 className="screen__title">{t('generating.subtitle')}</h2>
-      <ProgressOrb progress={progress} />
+      <ProgressOrb progress={pct} />
       <p className="screen__sub">{t(`generating.${phase}` as const)}</p>
+      <p className="screen__sub muted" style={{ fontSize: 13 }}>{state ?? 'preparing'} · {Math.round(pct * 100)}%</p>
     </div>
   );
 }

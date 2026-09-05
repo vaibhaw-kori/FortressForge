@@ -177,6 +177,22 @@ def install_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _unhandled(_: Request, exc: Exception) -> JSONResponse:
+        # Retryable SQLite busy/locked -> 429 so the local stress client can backoff and retry
+        # (production uses Postgres, so this is prototype-only).
+        try:
+            from sqlalchemy.exc import OperationalError
+
+            if isinstance(exc, OperationalError):
+                msg = str(exc).lower()
+                if "locked" in msg or "busy" in msg or "database is locked" in msg:
+                    log.warning("retryable_db_busy", error=str(exc)[:300])
+                    return JSONResponse(
+                        status_code=429,
+                        content=_payload("retryable_db_busy", "Database busy, retry"),
+                        headers={"Retry-After": "1"},
+                    )
+        except Exception:
+            pass
         log.exception("unhandled_error", error=str(exc))
         return JSONResponse(
             status_code=500, content=_payload("internal_error", "Internal server error")

@@ -34,13 +34,33 @@ def _ensure_sqlite_parent_dir(url: str) -> None:
                 pass
 
 
+def _resolved_database_url() -> str:
+    s = get_settings()
+    # Use absolute sqlite path so CWD at launch (project root vs services/backend) resolves to same file
+    if hasattr(s, "resolved_database_url"):
+        return s.resolved_database_url  # type: ignore[attr-defined]
+    return s.database_url
+
+
 def get_engine() -> Engine:
     global _engine
     if _engine is None:
         s = get_settings()
-        _ensure_sqlite_parent_dir(s.database_url)
-        connect_args = {"check_same_thread": False} if s.is_sqlite else {}
-        _engine = create_engine(s.database_url, connect_args=connect_args, future=True)
+        url = _resolved_database_url()
+        _ensure_sqlite_parent_dir(url)
+        connect_args = {"check_same_thread": False, "timeout": 10.0} if s.is_sqlite else {}
+        _engine = create_engine(url, connect_args=connect_args, future=True, pool_size=5, max_overflow=10, pool_timeout=30)
+        if s.is_sqlite:
+            from sqlalchemy import text
+
+            try:
+                with _engine.begin() as conn:
+                    conn.execute(text("PRAGMA journal_mode=WAL;"))
+                    conn.execute(text("PRAGMA synchronous=NORMAL;"))
+                    conn.execute(text("PRAGMA busy_timeout=8000;"))
+                    conn.execute(text("PRAGMA foreign_keys=ON;"))
+            except Exception:
+                pass
     return _engine
 
 

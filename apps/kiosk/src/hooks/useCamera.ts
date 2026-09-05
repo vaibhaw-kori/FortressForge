@@ -21,7 +21,12 @@ export function useCamera(): UseCameraResult {
     let cancelled = false;
     async function start() {
       if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-        setErrorMessage('Camera API not available');
+        setErrorMessage('Camera API not available in this browser/context. Use http://127.0.0.1:4173 and allow camera.');
+        return;
+      }
+      // Must be secure context (https or http://127.0.0.1/localhost)
+      if (typeof window !== 'undefined' && !window.isSecureContext) {
+        setErrorMessage('Camera requires a secure context. Open http://127.0.0.1:4173 and allow camera.');
         return;
       }
       try {
@@ -34,14 +39,11 @@ export function useCamera(): UseCameraResult {
           return;
         }
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play().catch(() => undefined);
-        }
         setReady(true);
       } catch (err: unknown) {
-        const e = err as Error;
-        setErrorMessage(e.message || 'Camera access denied');
+        const e = err as Error & { name?: string };
+        const msg = e.name === 'NotAllowedError' ? 'Camera permission denied — please Allow and reload.' : e.message || 'Camera access denied';
+        setErrorMessage(msg);
       }
     }
     void start();
@@ -52,6 +54,42 @@ export function useCamera(): UseCameraResult {
       setReady(false);
     };
   }, []);
+
+  // Attach stream whenever video mounts, ready flips, or after RESET for next visitor
+  useEffect(() => {
+    if (!ready) return;
+    const s = streamRef.current;
+    if (!s) return;
+    let raf = 0;
+    let tries = 0;
+    const attach = () => {
+      const v = videoRef.current;
+      if (v) {
+        if (v.srcObject !== s) {
+          v.srcObject = s;
+        }
+        // Ensure video is playing (may have been paused during screen transition)
+        if (v.paused) void v.play().catch(() => undefined);
+        // If video still has no dimensions, keep trying a few frames (camera warmup for next visitor)
+        if ((!v.videoWidth || !v.videoHeight) && tries < 20) {
+          tries++;
+          raf = requestAnimationFrame(attach);
+        }
+      } else {
+        raf = requestAnimationFrame(attach);
+      }
+    };
+    attach();
+    // Also re-attach on visibility change (tab hidden → visible for next visitor)
+    const onVis = () => {
+      if (document.visibilityState === 'visible') attach();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      cancelAnimationFrame(raf);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [ready]);
 
   const capture = useCallback(async () => {
     const video = videoRef.current;

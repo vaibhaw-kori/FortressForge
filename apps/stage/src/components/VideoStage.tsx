@@ -127,6 +127,7 @@ export function VideoStage({ current, preloadSrc, onEnded, onError, muted = true
         ref={aRef}
         src={aSrc ?? undefined}
         muted={muted}
+        autoPlay
         playsInline
         preload="auto"
         className={`video-stage__video ${active === 'a' ? 'video-stage__video--active' : ''}`}
@@ -137,6 +138,7 @@ export function VideoStage({ current, preloadSrc, onEnded, onError, muted = true
         ref={bRef}
         src={bSrc ?? undefined}
         muted={muted}
+        autoPlay
         playsInline
         preload="auto"
         className={`video-stage__video ${active === 'b' ? 'video-stage__video--active' : ''}`}

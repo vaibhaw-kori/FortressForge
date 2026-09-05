@@ -2,7 +2,6 @@ import { Button } from '../components/Button';
 import { CaptureFrame } from '../components/CaptureFrame';
 import { CountdownDial } from '../components/CountdownDial';
 import { RefObject } from 'react';
-import { useCamera } from '../hooks/useCamera';
 import { useT } from '../i18n/useT';
 
 interface Props {
@@ -10,15 +9,17 @@ interface Props {
   total: number;
   remaining: number;
   onCancel: () => void;
+  videoRef: RefObject<HTMLVideoElement>;
+  ready: boolean;
+  errorMessage: string | null;
 }
 
-export function CountdownScreen({ language, total, remaining, onCancel }: Props) {
+export function CountdownScreen({ language, total, remaining, onCancel, videoRef, ready, errorMessage }: Props) {
   const { t } = useT(language);
-  const { videoRef, ready, errorMessage } = useCamera();
   return (
     <div className="screen">
       <p className="screen__eyebrow">{t('countdown.hold')}</p>
-      <CaptureFrame videoRef={videoRef as RefObject<HTMLVideoElement>} ready={ready} errorMessage={errorMessage} aspect="portrait" />
+      <CaptureFrame videoRef={videoRef} ready={ready} errorMessage={errorMessage} aspect="portrait" />
       <CountdownDial total={total} remaining={remaining} />
       <Button variant="ghost" onClick={onCancel}>{t('countdown.cancel')}</Button>
     </div>

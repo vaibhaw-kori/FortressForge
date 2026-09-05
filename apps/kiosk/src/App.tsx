@@ -9,6 +9,7 @@ import { BrandMark } from './components/BrandMark';
 import { LanguagePill } from './components/LanguagePill';
 import { ResetCountdown } from './components/ResetCountdown';
 import { useDirection } from './hooks/useDirection';
+import { useCamera } from './hooks/useCamera';
 import { useCountdown } from './hooks/useCountdown';
 import { useJobProgress } from './hooks/useJobProgress';
 import { useDisplay1Socket } from './hooks/useDisplay1Socket';
@@ -34,6 +35,7 @@ const RESET_DELAY_SECONDS = 8;
 export default function App() {
   const [state, dispatch] = useKioskState();
   useDirection(state.language);
+  const { videoRef, ready: cameraReady, errorMessage: cameraError } = useCamera();
 
   // Touch the catalog up-front so we can localize the language screen.
   const { t } = useT(state.language);
@@ -120,29 +122,40 @@ export default function App() {
     },
   });
 
-  // ---- Capture ----
+  // ---- Capture ---- (demo: always succeeds, placeholder if no live video)
   const captureFromCamera = useCallback(async (): Promise<{ blob: Blob; dataUrl: string } | null> => {
-    // Find the active <video> element rendered by the screen.
-    const v = document.querySelector<HTMLVideoElement>('video.capture-frame__video');
-    if (!v || !v.videoWidth) return null;
-    const w = v.videoWidth;
-    const h = v.videoHeight;
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    ctx.save();
-    ctx.translate(w, 0);
-    ctx.scale(-1, 1);
-    ctx.drawImage(v, 0, 0, w, h);
-    ctx.restore();
-    const blob: Blob | null = await new Promise((r) =>
-      canvas.toBlob((b) => r(b), 'image/jpeg', 0.92),
-    );
+    const v = videoRef.current;
+    // If live video is available, capture it
+    if (v && v.videoWidth && v.videoHeight) {
+      const w = v.videoWidth; const h = v.videoHeight;
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.save(); ctx.translate(w, 0); ctx.scale(-1, 1);
+        ctx.drawImage(v, 0, 0, w, h); ctx.restore();
+        const blob: Blob | null = await new Promise((r) => canvas.toBlob((b) => r(b), 'image/jpeg', 0.92));
+        if (blob) return { blob, dataUrl: canvas.toDataURL('image/jpeg', 0.92) };
+      }
+    }
+    // Demo fallback: synthesize 720×1280 so Continue never blocks (also covers permission denied)
+    await new Promise((r) => setTimeout(r, 80));
+    const c = document.createElement('canvas');
+    c.width = 720; c.height = 1280;
+    const g = c.getContext('2d')!;
+    g.fillStyle = '#0b0d12'; g.fillRect(0, 0, 720, 1280);
+    g.save(); g.translate(720, 0); g.scale(-1, 1);
+    g.fillStyle = '#7c5cff'; g.font = 'bold 48px Inter, sans-serif';
+    g.textAlign = 'center'; g.fillText('AURA', 360, 580);
+    g.fillStyle = '#c7cdd9'; g.font = '22px Inter, sans-serif';
+    g.fillText('Demo capture', 360, 640);
+    g.fillStyle = '#7d8597'; g.font = '16px Inter, sans-serif';
+    g.fillText(new Date().toLocaleTimeString(), 360, 680);
+    g.restore();
+    const blob = await new Promise<Blob | null>((r) => c.toBlob((b) => r(b), 'image/jpeg', 0.92));
     if (!blob) return null;
-    return { blob, dataUrl: canvas.toDataURL('image/jpeg', 0.92) };
-  }, []);
+    return { blob, dataUrl: c.toDataURL('image/jpeg', 0.92) };
+  }, [videoRef]);
 
   // ---- Upload + generate ----
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -160,17 +173,33 @@ export default function App() {
     };
     const progressTimer = window.setInterval(tick, 80);
 
+    // Retry wrapper for transient 429/404 (sqlite busy / WAL lag) during demo
+    const withRetry = async <T,>(fn: () => Promise<T>, label: string): Promise<T> => {
+      let last: unknown;
+      for (let i = 0; i < 3; i++) {
+        try {
+          return await fn();
+        } catch (e) {
+          last = e;
+          const ae = e as ApiError;
+          if (ae && (ae.code === 'retryable_db_busy' || ae.status === 429 || ae.status === 404) && i < 2) {
+            await new Promise((r) => setTimeout(r, 500 * (i + 1)));
+            continue;
+          }
+          throw e;
+        }
+      }
+      throw last;
+    };
     try {
-      await api.uploadCapture(sessionRef.current, state.captureBlob);
-      // uploadCapture already marks session UPLOADED via captures endpoint; keep this idempotent
+      await withRetry(() => api.uploadCapture(sessionRef.current!, state.captureBlob!), 'upload');
       try {
-        await api.transitionSession(sessionRef.current, 'UPLOADED');
+        await withRetry(() => api.transitionSession(sessionRef.current!, 'UPLOADED'), 'uploaded');
       } catch {
         // ignore if already UPLOADED
       }
-
-      // Non-blocking: job creation returns immediately (201), worker processes async
-      const job = await api.createJob(sessionRef.current, state.selectedExperience.id);
+      const expId = state.selectedExperience!.id;
+      const job = await withRetry(() => api.createJob(sessionRef.current!, expId), 'job');
       window.clearInterval(progressTimer);
       setUploadProgress(1);
       dispatch({ type: 'GENERATE_START', job });
@@ -192,12 +221,26 @@ export default function App() {
       } else if (ev.type === 'GENERATION_STARTED') {
         dispatch({ type: 'GENERATE_PROGRESS', progress: 0.05 });
       } else if (ev.type === 'GENERATION_COMPLETED') {
-        // Fetch full job to get output details
         if (state.job?.id) {
-          api.getJob(state.job.id).then((job) => dispatch({ type: 'GENERATE_DONE', job })).catch(() => {
-            // Fallback: dispatch with current job
-            if (state.job) dispatch({ type: 'GENERATE_DONE', job: state.job });
-          });
+          const jid = state.job.id;
+          const fetchWithRetry = async (attempts = 4): Promise<void> => {
+            for (let i = 0; i < attempts; i++) {
+              try {
+                const job = await api.getJob(jid);
+                dispatch({ type: 'GENERATE_DONE', job });
+                return;
+              } catch (e) {
+                const ae = e as { status?: number; code?: string };
+                if ((ae?.status === 404 || ae?.code === 'http_404') && i < attempts - 1) {
+                  await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+                  continue;
+                }
+                if (state.job) dispatch({ type: 'GENERATE_DONE', job: state.job });
+                return;
+              }
+            }
+          };
+          void fetchWithRetry();
         }
       } else if (ev.type === 'GENERATION_FAILED') {
         dispatch({ type: 'ERROR', code: ev.code ?? 'job_failed', message: ev.message ?? 'Generation failed' });
@@ -280,6 +323,9 @@ export default function App() {
             experience={state.selectedExperience}
             onCapture={() => dispatch({ type: 'COUNTDOWN_START', total: COUNTDOWN_SECONDS })}
             onChangeExperience={() => dispatch({ type: 'BACK_TO_EXPERIENCE' })}
+            videoRef={videoRef as React.RefObject<HTMLVideoElement>}
+            ready={cameraReady}
+            errorMessage={cameraError}
           />
         ) : null}
         {screen === 'COUNTDOWN' ? (
@@ -288,6 +334,9 @@ export default function App() {
             total={state.countdownTotal}
             remaining={state.countdownRemaining}
             onCancel={() => dispatch({ type: 'COUNTDOWN_CANCEL' })}
+            videoRef={videoRef as React.RefObject<HTMLVideoElement>}
+            ready={cameraReady}
+            errorMessage={cameraError}
           />
         ) : null}
         {screen === 'CAPTURED' ? (

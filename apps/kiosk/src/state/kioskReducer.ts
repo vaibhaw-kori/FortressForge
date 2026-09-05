@@ -136,6 +136,7 @@ export function reducer(state: KioskState, action: KioskAction): KioskState {
       return { ...state, jobProgress: Math.max(state.jobProgress, action.progress) };
     }
     case 'GENERATE_DONE': {
+      if (state.screen === 'COMPLETED') return state;
       assertTransition(state.screen, 'COMPLETED');
       return { ...state, screen: 'COMPLETED', job: action.job, jobProgress: 1 };
     }

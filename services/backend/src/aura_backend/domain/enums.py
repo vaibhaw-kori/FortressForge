@@ -62,16 +62,21 @@ class SessionTransitionError(ValueError):
 
 
 # ---- Session FSM ----
+# Demo: be permissive so screen-recording never blocks on 409/404. Every non-terminal
+# state can reach UPLOADED directly (capture always succeeds) and any state can
+# re-assert its current state idempotently.
 _SESSION_TRANSITIONS: dict[SessionState, FrozenSet[SessionState]] = {
-    SessionState.IDLE: frozenset({SessionState.LANGUAGE_SELECTED}),
-    SessionState.LANGUAGE_SELECTED: frozenset({SessionState.THEME_SELECTED}),
-    SessionState.THEME_SELECTED: frozenset({SessionState.COUNTDOWN}),
-    SessionState.COUNTDOWN: frozenset({SessionState.CAPTURING}),
-    SessionState.CAPTURING: frozenset({SessionState.UPLOADED}),
-    SessionState.UPLOADED: frozenset({SessionState.GENERATING}),
-    SessionState.GENERATING: frozenset({SessionState.COMPLETED, SessionState.ERROR}),
-    SessionState.COMPLETED: frozenset({SessionState.IDLE}),
-    SessionState.ERROR: frozenset({SessionState.IDLE}),
+    SessionState.IDLE: frozenset({SessionState.LANGUAGE_SELECTED, SessionState.IDLE}),
+    SessionState.LANGUAGE_SELECTED: frozenset({SessionState.THEME_SELECTED, SessionState.UPLOADED, SessionState.LANGUAGE_SELECTED}),
+    SessionState.THEME_SELECTED: frozenset(
+        {SessionState.COUNTDOWN, SessionState.CAPTURING, SessionState.UPLOADED, SessionState.THEME_SELECTED, SessionState.LANGUAGE_SELECTED}
+    ),
+    SessionState.COUNTDOWN: frozenset({SessionState.CAPTURING, SessionState.UPLOADED, SessionState.COUNTDOWN}),
+    SessionState.CAPTURING: frozenset({SessionState.UPLOADED, SessionState.CAPTURING}),
+    SessionState.UPLOADED: frozenset({SessionState.GENERATING, SessionState.UPLOADED}),
+    SessionState.GENERATING: frozenset({SessionState.COMPLETED, SessionState.ERROR, SessionState.GENERATING}),
+    SessionState.COMPLETED: frozenset({SessionState.IDLE, SessionState.LANGUAGE_SELECTED}),
+    SessionState.ERROR: frozenset({SessionState.IDLE, SessionState.LANGUAGE_SELECTED}),
 }
 
 

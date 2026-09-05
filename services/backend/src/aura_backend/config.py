@@ -130,9 +130,28 @@ class Settings(BaseSettings):
 
     @property
     def data_dir(self) -> Path:
-        p = Path("./data")
+        # Resolve relative to the backend package root so CWD at launch does not matter
+        # (prevents restart-from-different-CWD from creating a second DB file).
+        from pathlib import Path as _P
+
+        # .../services/backend/src/aura_backend/config.py -> .../services/backend
+        backend_root = _P(__file__).resolve().parents[2]
+        p = backend_root / "data"
         p.mkdir(parents=True, exist_ok=True)
         return p
+
+    @property
+    def resolved_database_url(self) -> str:
+        """Return database URL with absolute path for sqlite so restarts are DB-stable."""
+        if self.is_sqlite and self.database_url.startswith("sqlite:///./"):
+            rel = self.database_url[len("sqlite:///./") :]
+            abs_path = (self.data_dir / rel.replace("data/", "")).resolve() if rel.startswith("data/") else (self.data_dir.parent / rel).resolve()
+            # keep sqlite:///<abs> form (4 slashes on Windows)
+            return f"sqlite:///{abs_path.as_posix()}"
+        if self.is_sqlite and self.database_url.startswith("sqlite:///"):
+            # already absolute-ish, leave as is
+            return self.database_url
+        return self.database_url
 
 
 @lru_cache(maxsize=1)

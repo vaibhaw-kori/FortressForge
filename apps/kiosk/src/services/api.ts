@@ -49,13 +49,26 @@ function kioskHeaders(): Record<string, string> {
   return token ? { 'X-Kiosk-Token': token } : {};
 }
 
-async function doFetch(input: string, init?: RequestInit): Promise<Response> {
-  try {
-    return await fetch(input, init);
-  } catch (err) {
-    const message = err instanceof Error ? err.message || 'Network error' : 'Network error';
-    throw new ApiError('network_error', message, 0);
+async function doFetch(input: string, init?: RequestInit, retries = 3): Promise<Response> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(input, init);
+      // Retry on 429 (sqlite busy), 404 (session not yet visible under WAL), 502/503
+      if ((res.status === 429 || res.status === 404 || res.status === 502 || res.status === 503) && attempt < retries) {
+        await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+        continue;
+      }
+      const message = err instanceof Error ? err.message || 'Network error' : 'Network error';
+      throw new ApiError('network_error', message, 0);
+    }
   }
+  throw new ApiError('network_error', 'Network error', 0);
 }
 
 export const api = {
@@ -97,6 +110,13 @@ export const api = {
       headers: { 'Content-Type': 'application/json', ...kioskHeaders() },
       body: JSON.stringify({ to, ...extra }),
     });
+    // Idempotent: if already in target state, backend may 409; treat as success by re-fetching
+    if (res.status === 409) {
+      try {
+        const cur = await doFetch(API_PATHS.session(sessionId), { headers: { ...kioskHeaders() } });
+        if (cur.ok) return jsonOrThrow<SessionDTO>(cur);
+      } catch {}
+    }
     return jsonOrThrow<SessionDTO>(res);
   },
 

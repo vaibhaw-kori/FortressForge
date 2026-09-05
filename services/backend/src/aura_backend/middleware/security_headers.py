@@ -19,8 +19,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # HSTS only if HTTPS (check proto)
         if request.url.scheme == "https":
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        # CSP: restrict where frontend can load from; API should not be framed
-        # For API, we set a strict CSP that blocks everything by default
+        # CSP: API should not be framed; keep connect-src open for preview proxy and devtools
         if request.url.path.startswith("/api/"):
-            response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+            response.headers["Content-Security-Policy"] = "default-src 'none'; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; frame-ancestors 'none'"
         return response

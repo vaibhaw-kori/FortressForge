@@ -218,7 +218,11 @@ class TestTorchGating:
             ImagePreprocessingStage()(_ctx(capture_ref=""))
         assert isinstance(ei.value.original_error, ValidationFailed)
 
-    def test_image_preprocessing_nonempty_requires_torch(self):
+    def test_image_preprocessing_nonempty_requires_torch(self, monkeypatch):
+        import aura_backend.inference.wan_pipeline as wp
+
+        monkeypatch.setattr(wp, "_TORCH_AVAILABLE", False)
+        monkeypatch.setattr(wp, "torch", None)
         with pytest.raises(PipelineError) as ei:
             ImagePreprocessingStage()(_ctx(capture_ref="captures/x.jpg"))
         _assert_informative_import_error(ei.value)
@@ -226,6 +230,9 @@ class TestTorchGating:
     def test_image_preprocessing_invalid_storage_still_import_error(self, monkeypatch):
         # Even with mocked storage returning garbage, torch gating fires first.
         import aura_backend.inference.wan_pipeline as wp
+
+        monkeypatch.setattr(wp, "_TORCH_AVAILABLE", False)
+        monkeypatch.setattr(wp, "torch", None)
 
         class _S:
             def get(self, key):
@@ -236,36 +243,60 @@ class TestTorchGating:
             ImagePreprocessingStage()(_ctx(capture_ref="captures/bad.jpg"))
         _assert_informative_import_error(ei.value)
 
-    def test_reference_preparation_gated(self):
+    def test_reference_preparation_gated(self, monkeypatch):
+        import aura_backend.inference.wan_pipeline as wp
+
+        monkeypatch.setattr(wp, "_TORCH_AVAILABLE", False)
+        monkeypatch.setattr(wp, "torch", None)
         with pytest.raises(PipelineError) as ei:
             ReferencePreparationStage()(_ctx())
         _assert_informative_import_error(ei.value)
 
-    def test_model_loading_gated(self):
+    def test_model_loading_gated(self, monkeypatch):
+        import aura_backend.inference.wan_pipeline as wp
+
+        monkeypatch.setattr(wp, "_TORCH_AVAILABLE", False)
+        monkeypatch.setattr(wp, "torch", None)
         with pytest.raises(PipelineError) as ei:
             ModelLoadingStage()(_ctx())
         _assert_informative_import_error(ei.value)
 
-    def test_inference_gated(self):
+    def test_inference_gated(self, monkeypatch):
+        import aura_backend.inference.wan_pipeline as wp
+
+        monkeypatch.setattr(wp, "_TORCH_AVAILABLE", False)
+        monkeypatch.setattr(wp, "torch", None)
         with pytest.raises(PipelineError) as ei:
             InferenceStage()(_ctx())
         _assert_informative_import_error(ei.value)
 
-    def test_postprocessing_gated(self):
+    def test_postprocessing_gated(self, monkeypatch):
+        import aura_backend.inference.wan_pipeline as wp
+
+        monkeypatch.setattr(wp, "_TORCH_AVAILABLE", False)
+        monkeypatch.setattr(wp, "torch", None)
         ctx = _ctx()
         ctx.video_frames = ["fake-frame"]
         with pytest.raises(PipelineError) as ei:
             PostProcessingStage()(ctx)
         _assert_informative_import_error(ei.value)
 
-    def test_video_encoding_gated(self):
+    def test_video_encoding_gated(self, monkeypatch):
+        import aura_backend.inference.wan_pipeline as wp
+
+        monkeypatch.setattr(wp, "_TORCH_AVAILABLE", False)
+        monkeypatch.setattr(wp, "torch", None)
         ctx = _ctx()
         ctx.video_frames = ["fake-frame"]
         with pytest.raises(PipelineError) as ei:
             VideoEncodingStage()(ctx)
         _assert_informative_import_error(ei.value)
 
-    def test_output_validation_gated(self):
+    def test_output_validation_gated(self, monkeypatch):
+        import aura_backend.inference.wan_pipeline as wp
+
+        monkeypatch.setattr(wp, "_TORCH_AVAILABLE", False)
+        monkeypatch.setattr(wp, "torch", None)
         with pytest.raises(PipelineError) as ei:
             OutputValidationStage()(_ctx())
         _assert_informative_import_error(ei.value)
