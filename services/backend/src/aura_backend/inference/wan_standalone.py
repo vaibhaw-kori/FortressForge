@@ -147,7 +147,7 @@ def main():
     parser.add_argument("--resolution", default="480x832", help="Output resolution (WxH)")
     parser.add_argument("--model-variant", default="wan2.1-i2v-14b-480p", help="Model variant")
     parser.add_argument("--precision", choices=["fp16", "bf16", "fp32"], default="bf16")
-    parser.add_argument("--model-repo", default="Wan-AI/Wan2.1-I2V-14B-480P", help="HF model repo")
+    parser.add_argument("--model-repo", default="Wan-AI/Wan2.1-I2V-14B-480P-Diffusers", help="HF model repo")
     parser.add_argument("--local-path", help="Local model path (optional)")
     parser.add_argument("--offload", action="store_true", help="Enable CPU offload")
     parser.add_argument("--cpu-offload", action="store_true", help="Enable sequential CPU offload")

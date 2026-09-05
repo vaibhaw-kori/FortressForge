@@ -37,10 +37,12 @@ class WanSchedulerType(str, Enum):
 
 # Default model repository on Hugging Face.
 # Verified 2026-09: the 1.3B line is T2V-only upstream (no image input), so
-# image-to-video MUST use a 14B I2V repo. 480P fits 16GB via sequential
-# CPU offload; 720P needs an A6000 (48GB).
-DEFAULT_MODEL_REPO = "Wan-AI/Wan2.1-I2V-14B-480P"
-# 720P repo for A6000: "Wan-AI/Wan2.1-I2V-14B-720P"
+# image-to-video MUST use a 14B I2V repo. The plain repo is training-format
+# (no diffusers subfolders); the -Diffusers repo matches our loader layout
+# (tokenizer/text_encoder/transformer/vae/scheduler). 480P fits 16GB via
+# sequential CPU offload; 720P needs an A6000 (48GB).
+DEFAULT_MODEL_REPO = "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers"
+# 720P repo for A6000: "Wan-AI/Wan2.1-I2V-14B-720P-Diffusers"
 
 # Model subdirectories
 MODEL_SUBDIRS = {

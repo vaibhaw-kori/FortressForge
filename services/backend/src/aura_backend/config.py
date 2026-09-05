@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     wan_provider_enabled: bool = False
     wan_model_variant: str = "wan2.1-i2v-14b-480p"
     wan_precision: str = "bf16"
-    wan_model_repo: str = "Wan-AI/Wan2.1-I2V-14B-480P"
+    wan_model_repo: str = "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers"
     wan_local_model_path: str = ""
     wan_enable_offload: bool = False
     wan_offload_to_cpu: bool = False
