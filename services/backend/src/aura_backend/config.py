@@ -54,11 +54,11 @@ class Settings(BaseSettings):
     runpod_endpoint_animatediff: str = ""
     runpod_provider_default: str = "mock"
 
-    # Wan 2.1 local inference settings — RTX 2000 Ada (16GB) 1.3B 480P profile
+    # Wan 2.1 local inference settings — 14B 480P I2V + sequential offload on 16GB
     wan_provider_enabled: bool = False
-    wan_model_variant: str = "wan2.1-i2v-1.3b-480p"
+    wan_model_variant: str = "wan2.1-i2v-14b-480p"
     wan_precision: str = "bf16"
-    wan_model_repo: str = "Wan-AI/Wan2.1-I2V-1.3B-480P"
+    wan_model_repo: str = "Wan-AI/Wan2.1-I2V-14B-480P"
     wan_local_model_path: str = ""
     wan_enable_offload: bool = False
     wan_offload_to_cpu: bool = False

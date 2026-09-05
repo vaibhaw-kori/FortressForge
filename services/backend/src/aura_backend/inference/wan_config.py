@@ -35,9 +35,12 @@ class WanSchedulerType(str, Enum):
     EULER_A = "euler_ancestral"
 
 
-# Default model repository on Hugging Face — 1.3B 480P is the RTX 2000 Ada (16GB) profile
-DEFAULT_MODEL_REPO = "Wan-AI/Wan2.1-I2V-1.3B-480P"
-# 14B 720P repo kept for A6000: "Wan-AI/Wan2.1-I2V-14B-720P"
+# Default model repository on Hugging Face.
+# Verified 2026-09: the 1.3B line is T2V-only upstream (no image input), so
+# image-to-video MUST use a 14B I2V repo. 480P fits 16GB via sequential
+# CPU offload; 720P needs an A6000 (48GB).
+DEFAULT_MODEL_REPO = "Wan-AI/Wan2.1-I2V-14B-480P"
+# 720P repo for A6000: "Wan-AI/Wan2.1-I2V-14B-720P"
 
 # Model subdirectories
 MODEL_SUBDIRS = {
@@ -85,8 +88,8 @@ MAX_FRAMES_BY_RESOLUTION = {
 
 @dataclass(frozen=True)
 class WanModelConfig:
-    """Immutable model configuration — 1.3B 480P is the 16GB default."""
-    variant: WanModelVariant = WanModelVariant.WAN_2_1_I2V_1_3B_480P
+    """Immutable model configuration — 14B 480P I2V (sequential offload on 16GB)."""
+    variant: WanModelVariant = WanModelVariant.WAN_2_1_I2V_14B_480P
     precision: WanPrecision = WanPrecision.BF16
     scheduler_type: WanSchedulerType = WanSchedulerType.UNIPC
     model_repo: str = DEFAULT_MODEL_REPO

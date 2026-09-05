@@ -49,9 +49,34 @@ async def lifespan(app: FastAPI):
         from .inference.wan_provider import register_wan_provider
         from .inference.wan_config import WanModelConfig, WanGenerationConfig
 
-        model_config = WanModelConfig()
+        from .inference.wan_config import WanModelVariant, WanPrecision
+
+        try:
+            variant = WanModelVariant(s.wan_model_variant)
+        except ValueError:
+            variant = WanModelVariant.WAN_2_1_I2V_14B_480P
+        try:
+            precision = WanPrecision(s.wan_precision)
+        except ValueError:
+            precision = WanPrecision.BF16
+        model_config = WanModelConfig(
+            variant=variant,
+            precision=precision,
+            model_repo=s.wan_model_repo or WanModelConfig().model_repo,
+            local_model_path=s.wan_local_model_path or None,
+            enable_offload=s.wan_enable_offload,
+            offload_to_cpu=s.wan_offload_to_cpu,
+            enable_vae_tiling=s.wan_enable_vae_tiling,
+            vae_tile_size=s.wan_vae_tile_size,
+            enable_xformers=s.wan_enable_xformers,
+            enable_flash_attention=s.wan_enable_flash_attention,
+            compile_transformer=s.wan_compile_transformer,
+            compile_vae=s.wan_compile_vae,
+            device=s.wan_device,
+            dtype=s.wan_dtype,
+        )
         # NOTE: generation_max_attempts is the RETRY count — never use it as
-        # diffusion steps (that would render garbage). 1.3B 480P default: 24.
+        # diffusion steps (that would render garbage). 14B 480P default: 24.
         generation_config = WanGenerationConfig(
             num_inference_steps=24,
             guidance_scale=7.0,
