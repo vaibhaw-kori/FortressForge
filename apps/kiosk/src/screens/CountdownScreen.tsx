@@ -1,7 +1,7 @@
 import { Button } from '../components/Button';
 import { CaptureFrame } from '../components/CaptureFrame';
 import { CountdownDial } from '../components/CountdownDial';
-import { RefObject } from 'react';
+import type { Ref } from 'react';
 import { useT } from '../i18n/useT';
 
 interface Props {
@@ -9,7 +9,7 @@ interface Props {
   total: number;
   remaining: number;
   onCancel: () => void;
-  videoRef: RefObject<HTMLVideoElement>;
+  videoRef: Ref<HTMLVideoElement>;
   ready: boolean;
   errorMessage: string | null;
 }

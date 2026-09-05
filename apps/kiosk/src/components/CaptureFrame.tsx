@@ -1,7 +1,7 @@
-import { RefObject } from 'react';
+import type { Ref } from 'react';
 
 interface Props {
-  videoRef: RefObject<HTMLVideoElement>;
+  videoRef: Ref<HTMLVideoElement>;
   ready: boolean;
   errorMessage: string | null;
   hintText?: string;

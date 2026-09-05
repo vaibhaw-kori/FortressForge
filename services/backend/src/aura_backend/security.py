@@ -54,8 +54,10 @@ def require_kiosk_token(
 ) -> None:
     """Dependency for kiosk-facing endpoints. Allows header or query param."""
     s = get_settings()
-    # In dev, allow missing token for ease of local testing
-    if s.env != "prod" and not x_kiosk_token and not token_qs and not authorization:
+    # Tests use env=test with no token; allow anon ONLY there. Dev still
+    # requires the kiosk token (frontend always sends X-Kiosk-Token), so a
+    # misconfigured AURA_ENV=dev in production cannot silently open kiosk APIs.
+    if s.env == "test" and not x_kiosk_token and not token_qs and not authorization:
         return
     token = x_kiosk_token or token_qs
     # Also allow Authorization: Bearer <kiosk_token>

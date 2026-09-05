@@ -1,7 +1,7 @@
 import { ExperienceDTO } from '@aura/contracts';
 import { Button } from '../components/Button';
 import { CaptureFrame } from '../components/CaptureFrame';
-import { RefObject } from 'react';
+import type { Ref } from 'react';
 import { useT } from '../i18n/useT';
 
 interface Props {
@@ -9,7 +9,7 @@ interface Props {
   experience: ExperienceDTO;
   onCapture: () => void;
   onChangeExperience: () => void;
-  videoRef: RefObject<HTMLVideoElement>;
+  videoRef: Ref<HTMLVideoElement>;
   ready: boolean;
   errorMessage: string | null;
 }
@@ -27,14 +27,14 @@ export function ReadyScreen({ language, experience, onCapture, onChangeExperienc
       <CaptureFrame videoRef={videoRef} ready={ready} errorMessage={errorMessage} hintText={hint} aspect="portrait" />
       <div className="row" style={{ gap: 18 }}>
         <Button variant="ghost" onClick={onChangeExperience}>{t('ready.changeTheme')}</Button>
-        <Button size="lg" onClick={onCapture}>{t('ready.capture')}</Button>
+        <Button size="lg" onClick={onCapture} disabled={!ready} title={ready ? undefined : 'Waiting for camera…'}>{t('ready.capture')}</Button>
       </div>
       {showDemoBypass && (
         <>
           <p className="screen__sub muted" style={{ fontSize: 12, marginTop: 4 }}>
-            Camera blocked — tap <strong>Demo capture</strong> to record without camera.
+            No camera yet — <strong>Demo capture</strong> uses a placeholder frame so you can still record the full flow.
           </p>
-          <Button variant="ghost" onClick={onCapture} style={{ marginTop: 4, fontSize: 13, padding: '10px 18px' }}>Demo capture</Button>
+          <Button variant="ghost" onClick={onCapture} style={{ marginTop: 4, fontSize: 13, padding: '10px 18px' }}>Demo capture (no camera)</Button>
         </>
       )}
     </div>

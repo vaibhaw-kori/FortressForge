@@ -9,8 +9,10 @@ import { fetchPlaylist } from './services/api';
 import './styles/globals.css';
 
 const STAGE_ID = 'stage-1';
+// Demo: play each new visitor video immediately after the current one
+// finishes its frame (interrupt + advance), so the client sees it in seconds.
 const DEFAULT_POLICY: ReelPolicyConfig = {
-  defaultInsert: 'queued',
+  defaultInsert: 'immediate',
   maxGeneratedInQueue: 20,
 };
 

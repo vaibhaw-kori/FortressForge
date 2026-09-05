@@ -37,8 +37,10 @@ class TestSession:
         s = Session()
         s.select_language("en")
         assert s.state == SessionState.LANGUAGE_SELECTED
-        with pytest.raises(Exception):
-            s.select_language("ar")
+        # Demo FSM is permissive: LANGUAGE_SELECTED -> LANGUAGE_SELECTED is now allowed for re-select
+        s.select_language("ar")
+        assert s.language == "ar"
+        assert s.state == SessionState.LANGUAGE_SELECTED
 
     def test_full_happy_path(self):
         s = Session()

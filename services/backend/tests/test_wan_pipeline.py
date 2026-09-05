@@ -38,7 +38,8 @@ class TestWanConfig:
 
     def test_model_config_defaults(self):
         config = WanModelConfig()
-        assert config.variant == WanModelVariant.WAN_2_1_I2V_14B_720P
+        # Default is now 1.3B 480P for RTX 2000 Ada 16GB
+        assert config.variant == WanModelVariant.WAN_2_1_I2V_1_3B_480P
         assert config.precision == WanPrecision.BF16
         assert config.scheduler_type == WanSchedulerType.UNIPC
 

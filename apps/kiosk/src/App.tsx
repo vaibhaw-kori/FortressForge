@@ -35,7 +35,7 @@ const RESET_DELAY_SECONDS = 8;
 export default function App() {
   const [state, dispatch] = useKioskState();
   useDirection(state.language);
-  const { videoRef, ready: cameraReady, errorMessage: cameraError } = useCamera();
+  const { videoRef, setVideoRef, ready: cameraReady, errorMessage: cameraError } = useCamera();
 
   // Touch the catalog up-front so we can localize the language screen.
   const { t } = useT(state.language);
@@ -323,7 +323,7 @@ export default function App() {
             experience={state.selectedExperience}
             onCapture={() => dispatch({ type: 'COUNTDOWN_START', total: COUNTDOWN_SECONDS })}
             onChangeExperience={() => dispatch({ type: 'BACK_TO_EXPERIENCE' })}
-            videoRef={videoRef as React.RefObject<HTMLVideoElement>}
+            videoRef={setVideoRef}
             ready={cameraReady}
             errorMessage={cameraError}
           />
@@ -334,7 +334,7 @@ export default function App() {
             total={state.countdownTotal}
             remaining={state.countdownRemaining}
             onCancel={() => dispatch({ type: 'COUNTDOWN_CANCEL' })}
-            videoRef={videoRef as React.RefObject<HTMLVideoElement>}
+            videoRef={setVideoRef}
             ready={cameraReady}
             errorMessage={cameraError}
           />

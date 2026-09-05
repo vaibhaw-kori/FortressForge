@@ -95,9 +95,6 @@ class MockVideoGenerationProvider(VideoGenerationProvider):
     def set_on_call(self, on_call: OnCallHook | None) -> None:
         self._on_call = on_call
 
-    def set_script(self, script: MockProviderScript) -> None:
-        self._script = script
-
     async def submit(self, payload: ProviderInput) -> ProviderHandle:
         async with self._lock:
             handle = ProviderHandle(provider_id=self.provider_id, provider_job_id=uuid.uuid4().hex)

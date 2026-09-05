@@ -440,7 +440,9 @@ class InferenceWorker:
                 j.begin_encoding()
             except JobTransitionError:
                 pass
-            asset = _to_video_asset(result, owner_session_id=j.session_id, job_id=job_id)
+            # File download + disk I/O off the event loop so one slow RunPod
+            # artifact fetch cannot stall WS heartbeats / other jobs.
+            asset = await asyncio.to_thread(_to_video_asset, result, j.session_id, job_id)
             j.complete(asset)
             repo.update(j)
             experience_id = j.experience_id

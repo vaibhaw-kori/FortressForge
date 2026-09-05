@@ -48,21 +48,22 @@ class Settings(BaseSettings):
     s3_public_base_url: str = "http://localhost:9000"
 
     runpod_api_key: str = ""
+    runpod_endpoint: str = "mock"
     runpod_endpoint_fake: str = "fake"
     runpod_endpoint_svd: str = ""
     runpod_endpoint_animatediff: str = ""
     runpod_provider_default: str = "mock"
 
-    # Wan 2.1 local inference settings
+    # Wan 2.1 local inference settings — RTX 2000 Ada (16GB) 1.3B 480P profile
     wan_provider_enabled: bool = False
-    wan_model_variant: str = "wan2.1-i2v-14b-720p"
+    wan_model_variant: str = "wan2.1-i2v-1.3b-480p"
     wan_precision: str = "bf16"
-    wan_model_repo: str = "Wan-AI/Wan2.1-I2V-14B-720P"
+    wan_model_repo: str = "Wan-AI/Wan2.1-I2V-1.3B-480P"
     wan_local_model_path: str = ""
     wan_enable_offload: bool = False
     wan_offload_to_cpu: bool = False
     wan_enable_vae_tiling: bool = True
-    wan_vae_tile_size: int = 512
+    wan_vae_tile_size: int = 384
     wan_enable_xformers: bool = True
     wan_enable_flash_attention: bool = True
     wan_compile_transformer: bool = False

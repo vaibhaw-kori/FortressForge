@@ -235,8 +235,9 @@ def get_storage() -> "StorageBackend":
                 bucket=s.s3_bucket_captures,
             )
         else:
-            # Use local filesystem
-            _storage = LocalStorage()
+            # Use local filesystem rooted at the backend data_dir so CWD at
+            # launch (repo root vs services/backend) resolves to the same dir.
+            _storage = LocalStorage(str(s.data_dir / "storage"))
     return _storage
 
 

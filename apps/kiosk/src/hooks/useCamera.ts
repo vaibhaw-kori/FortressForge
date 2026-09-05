@@ -2,10 +2,12 @@
  * Camera hook. Acquires a MediaStream once, exposes a video ref, and
  * provides a `capture` callback that grabs a still JPEG frame.
  */
-import { RefObject, useCallback, useEffect, useRef, useState } from 'react';
+import { Ref, RefObject, useCallback, useEffect, useRef, useState } from 'react';
 
 export interface UseCameraResult {
   videoRef: RefObject<HTMLVideoElement>;
+  /** Callback ref — attach this to every <video> so remounts (Retake / next visitor) get the stream instantly. */
+  setVideoRef: (el: HTMLVideoElement | null) => void;
   ready: boolean;
   errorMessage: string | null;
   capture: () => Promise<{ blob: Blob; dataUrl: string } | null>;
@@ -17,18 +19,25 @@ export function useCamera(): UseCameraResult {
   const [ready, setReady] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const attachEl = useCallback((el: HTMLVideoElement | null) => {
+    videoRef.current = el;
+    const s = streamRef.current;
+    if (el && s) {
+      if (el.srcObject !== s) el.srcObject = s;
+      void el.play().catch(() => undefined);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     async function start() {
       if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-        setErrorMessage('Camera API not available in this browser/context. Use http://127.0.0.1:4173 and allow camera.');
+        setErrorMessage('Camera API not available');
         return;
       }
-      // Must be secure context (https or http://127.0.0.1/localhost)
-      if (typeof window !== 'undefined' && !window.isSecureContext) {
-        setErrorMessage('Camera requires a secure context. Open http://127.0.0.1:4173 and allow camera.');
-        return;
-      }
+      // Note: browsers enforce secure-context for getUserMedia themselves;
+      // we surface their error (e.g. NotAllowedError/SecurityError) below
+      // instead of pre-blocking here so jsdom/unit tests keep working.
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: 'user' },
@@ -115,5 +124,5 @@ export function useCamera(): UseCameraResult {
     return { blob, dataUrl };
   }, [ready]);
 
-  return { videoRef, ready, errorMessage, capture };
+  return { videoRef, setVideoRef: attachEl, ready, errorMessage, capture };
 }

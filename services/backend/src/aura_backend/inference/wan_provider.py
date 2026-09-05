@@ -12,11 +12,13 @@ locally on the machine with GPU.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import uuid
 import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from ..domain.video_asset import VideoCodec
 from ..errors import ProviderError, ProviderTimeoutError
 from .providers.base import (
     PROVIDER_STATUS_FAILED,
@@ -86,43 +88,48 @@ class WanVideoGenerationProvider(VideoGenerationProvider):
     
     def _create_pipeline(self, payload: "ProviderInput") -> "WanInferencePipeline":
         """Create a pipeline instance for a job."""
+        from .wan_config import WanModelConfig, WanGenerationConfig, build_wan_prompt
+        from .wan_pipeline import WanPipelineFactory
+
         if not self._pipeline_factory:
-            from .wan_config import WanModelConfig
-            from .wan_pipeline import WanPipelineFactory
-            self._pipeline_factory = WanPipelineFactory(self.model_config)
-        
-        # Build generation config from provider input
-        from .wan_config import WanGenerationConfig
-        
-        # Build prompt from experience
-        from ..wan_config import build_wan_prompt
-        
+            self._pipeline_factory = WanPipelineFactory(
+                self.model_config or WanModelConfig()
+            )
+
+        # ProviderInput carries only base fields; per-experience tuning lives
+        # in model_params (the worker merges Experience.model_params there).
+        mp: dict[str, Any] = dict(payload.model_params or {})
+        # Worker may nest well-known params at top level of model_params.
+        steps = int(mp.get("num_inference_steps", 24))
+        guidance = float(mp.get("guidance_scale", 7.0))
+        motion_bucket = int(mp.get("motion_bucket_id", 160))
+        seed_policy = str(mp.get("seed_policy", "visitor_derived"))
+        fixed_seed = mp.get("fixed_seed")
+        strength = float(mp.get("strength", 0.7))
+
         gen_config = WanGenerationConfig(
-            prompt="",  # Will be filled by ExperienceConfigurationStage
-            negative_prompt="",
-            num_inference_steps=payload.num_inference_steps or 28,
-            guidance_scale=payload.guidance_scale or 7.5,
-            motion_bucket_id=payload.motion_bucket_id or 180,
-            seed=payload.fixed_seed,
+            prompt=payload.prompt or build_wan_prompt(
+                experience_id=payload.experience_id,
+                visitor_description="a person",
+            ),
+            negative_prompt=payload.negative_prompt or "",
+            num_inference_steps=steps,
+            guidance_scale=guidance,
+            motion_bucket_id=motion_bucket,
+            seed=fixed_seed if isinstance(fixed_seed, int) else None,
             fps=payload.fps or 12,
             duration_sec=payload.duration_sec or 4.0,
-            resolution=payload.resolution or "720x1280",
-            aspect_ratio=payload.aspect_ratio or "9:16",
-            seed_policy=payload.seed_policy or "visitor_derived",
-            fixed_seed=payload.fixed_seed,
-            strength=payload.strength or 0.7,
-            model_params=payload.model_params or {},
-            idempotency_key=payload.idempotency_key,
+            seed_policy=seed_policy,
+            fixed_seed=fixed_seed if isinstance(fixed_seed, int) else None,
+            strength=strength,
         )
-        
-        # Build prompt from experience
-        from ..wan_config import build_wan_prompt
-        gen_config.prompt = build_wan_prompt(
-            experience_id=payload.experience_id,
-            visitor_description="a person",
-        )
-        gen_config.negative_prompt = ""  # Will be filled by ExperienceConfigurationStage
-        
+        # Resolution/aspect live on the worker payload; map to W/H via presets.
+        from .wan_config import RESOLUTION_PRESETS
+
+        res = payload.resolution or "480x832"
+        if res in RESOLUTION_PRESETS:
+            gen_config.width, gen_config.height = RESOLUTION_PRESETS[res]
+
         return WanInferencePipeline(
             model_config=self.model_config or WanModelConfig(),
             generation_config=gen_config,
@@ -223,10 +230,15 @@ class WanVideoGenerationProvider(VideoGenerationProvider):
             )
         
         video_asset = result["video_asset"]
+        codec_raw = video_asset.get("codec", "h264")
+        try:
+            codec = VideoCodec(codec_raw) if not isinstance(codec_raw, VideoCodec) else codec_raw
+        except Exception:
+            codec = VideoCodec.H264
         return ProviderResult(
             output_ref=video_asset.get("url", video_asset.get("output_ref", "")),
             duration_sec=video_asset.get("duration_sec", 4.0),
-            codec="h264",
+            codec=codec,
             size_bytes=video_asset.get("size_bytes"),
             width=video_asset.get("width"),
             height=video_asset.get("height"),

@@ -50,10 +50,12 @@ async def lifespan(app: FastAPI):
         from .inference.wan_config import WanModelConfig, WanGenerationConfig
 
         model_config = WanModelConfig()
+        # NOTE: generation_max_attempts is the RETRY count — never use it as
+        # diffusion steps (that would render garbage). 1.3B 480P default: 24.
         generation_config = WanGenerationConfig(
-            num_inference_steps=s.generation_max_attempts,
-            guidance_scale=7.5,
-            motion_bucket_id=180,
+            num_inference_steps=24,
+            guidance_scale=7.0,
+            motion_bucket_id=160,
             seed_policy="visitor_derived",
         )
         register_wan_provider(
@@ -61,6 +63,38 @@ async def lifespan(app: FastAPI):
             model_config=model_config,
             generation_config=generation_config,
         )
+
+    # Register RunPod provider if configured (keeps mock registered for fallback)
+    # AI_PROVIDER=mock -> mock (default, local), AI_PROVIDER=runpod -> runpod (real GPU)
+    if s.runpod_provider_default in ("runpod", "runpod-mock", "sdxl", "svd", "animatediff"):
+        try:
+            from .inference.runpod_provider import RunPodVideoGenerationProvider
+
+            # Use the single endpoint config for now (mock provider's endpoint id is used as RunPod endpoint id)
+            # In production, map experience_id -> endpoint_id via config
+            endpoint_id = s.runpod_endpoint or s.runpod_endpoint_fake or "mock"
+            # Only register if we have an endpoint and it's not the mock placeholder
+            if endpoint_id and endpoint_id not in ("mock", "fake"):
+                runpod_provider = RunPodVideoGenerationProvider(
+                    provider_id="runpod",
+                    endpoint_id=endpoint_id,
+                    api_key=s.runpod_api_key,
+                )
+                registry.register(runpod_provider)
+                # Also alias "runpod" as the default for GenerationService
+                log.info("runpod_provider_registered", endpoint_id=endpoint_id)
+            elif s.runpod_api_key and endpoint_id in ("mock", "fake"):
+                # For local testing with mock endpoint but real key, still register runpod with mock endpoint
+                # so the switch AI_PROVIDER=runpod can be tested without a real endpoint
+                runpod_provider = RunPodVideoGenerationProvider(
+                    provider_id="runpod",
+                    endpoint_id=endpoint_id,
+                    api_key=s.runpod_api_key,
+                )
+                registry.register(runpod_provider)
+                log.info("runpod_provider_registered_mock_endpoint", endpoint_id=endpoint_id)
+        except Exception as exc:
+            log.warning("runpod_provider_failed", error=str(exc))
 
     log.info("providers_registered", ids=registry.list_ids())
 
@@ -87,6 +121,16 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         log.info("aura_stopping")
+        # Close pooled HTTP clients held by providers (RunPod) to avoid
+        # connection / file-descriptor leaks across reloads.
+        try:
+            for pid in registry.list_ids():
+                prov = registry.get(pid)
+                aclose = getattr(prov, "aclose", None)
+                if callable(aclose):
+                    await aclose()
+        except Exception:
+            pass
         worker.request_stop()
         worker_task.cancel()
         for u in unsubs:

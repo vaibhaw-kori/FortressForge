@@ -16,6 +16,7 @@ class WanModelVariant(str, Enum):
     """Supported Wan 2.1 model variants."""
     WAN_2_1_I2V_14B_720P = "wan2.1-i2v-14b-720p"
     WAN_2_1_I2V_14B_480P = "wan2.1-i2v-14b-480p"
+    WAN_2_1_I2V_1_3B_480P = "wan2.1-i2v-1.3b-480p"
     WAN_2_1_T2V_14B = "wan2.1-t2v-14b"
 
 
@@ -34,8 +35,9 @@ class WanSchedulerType(str, Enum):
     EULER_A = "euler_ancestral"
 
 
-# Default model repository on Hugging Face
-DEFAULT_MODEL_REPO = "Wan-AI/Wan2.1-I2V-14B-720P"
+# Default model repository on Hugging Face — 1.3B 480P is the RTX 2000 Ada (16GB) profile
+DEFAULT_MODEL_REPO = "Wan-AI/Wan2.1-I2V-1.3B-480P"
+# 14B 720P repo kept for A6000: "Wan-AI/Wan2.1-I2V-14B-720P"
 
 # Model subdirectories
 MODEL_SUBDIRS = {
@@ -45,15 +47,15 @@ MODEL_SUBDIRS = {
     "scheduler": "scheduler",
 }
 
-# Default generation parameters for Wan 2.1 I2V
+# Default generation parameters for Wan 2.1 I2V — 1.3B 480P profile (16GB)
 DEFAULT_WAN_PARAMS = {
-    "num_inference_steps": 28,
-    "guidance_scale": 7.5,
-    "motion_bucket_id": 180,
+    "num_inference_steps": 24,
+    "guidance_scale": 7.0,
+    "motion_bucket_id": 160,
     "seed_policy": "visitor_derived",
     "fps": 12,
     "duration_sec": 4.0,
-    "resolution": "720x1280",
+    "resolution": "480x832",
     "aspect_ratio": "9:16",
     "num_frames": 48,  # 4 seconds @ 12fps
     "guidance_scale_min": 1.0,
@@ -83,8 +85,8 @@ MAX_FRAMES_BY_RESOLUTION = {
 
 @dataclass(frozen=True)
 class WanModelConfig:
-    """Immutable model configuration."""
-    variant: WanModelVariant = WanModelVariant.WAN_2_1_I2V_14B_720P
+    """Immutable model configuration — 1.3B 480P is the 16GB default."""
+    variant: WanModelVariant = WanModelVariant.WAN_2_1_I2V_1_3B_480P
     precision: WanPrecision = WanPrecision.BF16
     scheduler_type: WanSchedulerType = WanSchedulerType.UNIPC
     model_repo: str = DEFAULT_MODEL_REPO
@@ -92,7 +94,7 @@ class WanModelConfig:
     enable_offload: bool = False
     offload_to_cpu: bool = False
     enable_vae_tiling: bool = True
-    vae_tile_size: int = 512
+    vae_tile_size: int = 384
     enable_xformers: bool = True
     enable_flash_attention: bool = True
     compile_transformer: bool = False

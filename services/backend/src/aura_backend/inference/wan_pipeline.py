@@ -923,12 +923,20 @@ class WanInferencePipeline:
                 error["message"],
             )
         
-        # Compile result
+        # Compile result (VideoAsset is a frozen dataclass — serialize manually)
+        video_asset_dict = None
+        if ctx.video_asset is not None:
+            from dataclasses import asdict as _asdict
+
+            video_asset_dict = _asdict(ctx.video_asset)
+            codec = video_asset_dict.get("codec")
+            if hasattr(codec, "value"):
+                video_asset_dict["codec"] = codec.value
         result = {
             "job_id": self.job_id,
             "session_id": self.session_id,
             "experience_id": self.experience_id,
-            "video_asset": ctx.video_asset.to_dict() if ctx.video_asset else None,
+            "video_asset": video_asset_dict,
             "metadata": ctx.metadata,
             "errors": ctx.errors,
             "warnings": ctx.warnings,

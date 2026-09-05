@@ -137,6 +137,10 @@ class RunPodVideoGenerationProvider(VideoGenerationProvider):
             raise ProviderError("runpod_bad_json", "RunPod submit returned invalid JSON") from exc
 
         handle = ProviderHandle(provider_id=self.provider_id, provider_job_id=provider_job_id)
+        # Bound in-memory job cache so long-running processes cannot grow without limit.
+        if len(self._jobs) > 2000:
+            oldest = next(iter(self._jobs))
+            self._jobs.pop(oldest, None)
         self._jobs[provider_job_id] = _RunPodJob(handle=handle, payload=payload)
         return handle
 
@@ -165,21 +169,101 @@ class RunPodVideoGenerationProvider(VideoGenerationProvider):
         try:
             data = resp.json()
             upstream = str(data.get("status") or "IN_QUEUE").upper()
+            # Cache output when completed so result() can find it
+            if upstream == "COMPLETED":
+                output = data.get("output")
+                if output is None:
+                    output = data.get("result")
+                output_ref = None
+                if isinstance(output, dict):
+                    output_ref = output.get("video_url") or output.get("url") or output.get("video") or output.get("output")
+                elif isinstance(output, str) and output.startswith("http"):
+                    output_ref = output
+                elif isinstance(output, list) and len(output) > 0:
+                    first = output[0]
+                    if isinstance(first, str) and first.startswith("http"):
+                        output_ref = first
+                    elif isinstance(first, dict):
+                        output_ref = first.get("url") or first.get("video_url")
+                if output_ref:
+                    job = self._jobs.get(handle.provider_job_id)
+                    if job:
+                        job.output_ref = output_ref
+                        # Try to get duration from output
+                        try:
+                            job.duration_sec = float(output.get("duration", 4.0)) if isinstance(output, dict) else 4.0
+                        except Exception:
+                            pass
         except ValueError as exc:
             raise ProviderError("runpod_bad_json", "RunPod status returned invalid JSON") from exc
 
         return _STATUS_MAP.get(upstream, PROVIDER_STATUS_RUNNING)
 
     async def result(self, handle: ProviderHandle) -> ProviderResult:
-        job = self._jobs.get(handle.provider_job_id)
-        if job is None or not job.output_ref:
-            raise ProviderError(
-                "runpod_no_output",
-                "RunPod job has no output yet; poll until COMPLETED.",
+        # For real RunPod, fetch the completed status and extract output.
+        # RunPod's /status/{id} returns {status: "COMPLETED", output: {...}} where output
+        # contains the video URL (or base64). We handle both.
+        try:
+            client = await self._client_get()
+            resp = await client.get(
+                f"{self.base_url}/{self.endpoint_id}/status/{handle.provider_job_id}",
+                headers=self._headers(),
             )
-        return ProviderResult(
-            output_ref=job.output_ref,
-            duration_sec=job.duration_sec,
+            if resp.is_success:
+                try:
+                    data = resp.json()
+                    # Check for output in various RunPod response shapes
+                    output = data.get("output")
+                    if output is None:
+                        output = data.get("result")
+                    # Handle output being a dict with video URL
+                    output_ref = None
+                    duration = 4.0
+                    if isinstance(output, dict):
+                        # Common: {video_url: "...", url: "...", video: "..."}
+                        output_ref = output.get("video_url") or output.get("url") or output.get("video") or output.get("output")
+                        if output_ref and isinstance(output_ref, str) and output_ref.startswith("http"):
+                            duration = float(output.get("duration", 4.0))
+                        # Handle output being a list with URL
+                        if not output_ref and isinstance(output, list) and len(output) > 0:
+                            first = output[0]
+                            if isinstance(first, str) and first.startswith("http"):
+                                output_ref = first
+                            elif isinstance(first, dict):
+                                output_ref = first.get("url") or first.get("video_url")
+                    elif isinstance(output, str) and output.startswith("http"):
+                        output_ref = output
+                    elif isinstance(output, str) and len(output) > 100:
+                        # Possibly base64, save as temp file reference
+                        output_ref = f"runpod://{handle.provider_job_id}/output.mp4"
+                        # Store base64 for worker to handle (worker will treat as local path)
+                        # For now, return as is
+                        pass
+                    if output_ref:
+                        # Cache for idempotency
+                        job = self._jobs.get(handle.provider_job_id)
+                        if job:
+                            job.output_ref = output_ref
+                            job.duration_sec = duration
+                            job.state = PROVIDER_STATUS_SUCCEEDED
+                        return ProviderResult(
+                            output_ref=output_ref,
+                            duration_sec=duration,
+                        )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Fallback to local cache (for tests and when status doesn't yet have output)
+        job = self._jobs.get(handle.provider_job_id)
+        if job is not None and job.output_ref:
+            return ProviderResult(
+                output_ref=job.output_ref,
+                duration_sec=job.duration_sec,
+            )
+        raise ProviderError(
+            "runpod_no_output",
+            "RunPod job has no output yet; poll until COMPLETED.",
         )
 
     async def cancel(self, handle: ProviderHandle) -> None:

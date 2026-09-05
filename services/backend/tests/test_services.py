@@ -69,12 +69,14 @@ def test_session_service_reset(db_session):
 
 
 def test_session_service_mark_uploaded_requires_capturing_state(db_session):
+    # Demo FSM is permissive: LANGUAGE_SELECTED -> UPLOADED is now allowed (direct upload path)
     svc = SessionService(db_session)
     s = svc.create()
     svc.select_language(s.id, "en")
-    # Skip countdown/capture -> illegal transition must surface as 409 (AuraError)
-    with pytest.raises(Exception):
-        svc.mark_uploaded(s.id, "c.jpg")
+    # Direct upload should now succeed (permissive demo FSM)
+    s2 = svc.mark_uploaded(s.id, "c.jpg")
+    assert s2.state == SessionState.UPLOADED
+    assert s2.capture_ref == "c.jpg"
 
 
 def test_experience_service_list_falls_back_to_seed(db_session):
