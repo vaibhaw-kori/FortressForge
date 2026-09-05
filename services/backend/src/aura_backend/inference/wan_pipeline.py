@@ -76,10 +76,13 @@ from ..errors import (
 from ..domain.video_asset import VideoAsset, VideoCodec
 from ..storage import get_storage
 
-# Lazy import for heavy dependencies (optional)
+# Lazy import for heavy dependencies (optional).
+# NOTE: newer diffusers raise RuntimeError (not ImportError) when a lazy
+# submodule fails, so catch both — a broken/partial diffusers install must
+# never take down the whole backend import chain (mock mode needs none of it).
 try:
     from diffusers import WanPipeline  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover
+except (ImportError, RuntimeError):  # pragma: no cover
     WanPipeline = None  # type: ignore[assignment]
 
 try:
