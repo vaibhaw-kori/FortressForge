@@ -52,6 +52,24 @@ def _require_torch() -> None:
         )
 
 
+def resolve_offload_folder(preferred: str) -> str:
+    """Resolve a writable accelerate offload dir, falling back to tmpfs-safe temp.
+
+    An empty/uncreatable `preferred` path must NEVER silently resolve to
+    system /tmp on small containers: mmap'd offload files outgrow it and the
+    kernel answers with SIGBUS (exit 135) mid-load.
+    """
+    if preferred:
+        try:
+            os.makedirs(preferred, exist_ok=True)
+            return preferred
+        except Exception:
+            pass
+    import tempfile as _tf
+
+    return _tf.mkdtemp(prefix="aura_offload_")
+
+
 def place_pipeline_on_device(
     pipeline: Any, *, enable_offload: bool, offload_to_cpu: bool, device: Any
 ) -> Any:
@@ -247,16 +265,13 @@ class WanModelLoader:
 
         # Small pods: stream weights with accelerate device_map + disk
         # offload so RAM never holds them all (defined up-front: the text
-        # encoder block below runs before the transformer block).
+        # encoder block below runs first).
+        # NOTE: empty string counts as unset — otherwise offload files land
+        # in system /tmp (container disk, tiny) and mmap writes SIGBUS.
         _disk_offload = bool(self.config.offload_to_cpu)
-        _offload_folder = os.environ.get("AURA_WAN_OFFLOAD_FOLDER", "/workspace/.offload")
-        if _disk_offload:
-            try:
-                os.makedirs(_offload_folder, exist_ok=True)
-            except Exception:
-                import tempfile as _tf
-
-                _offload_folder = _tf.mkdtemp(prefix="aura_offload_")
+        _offload_folder = resolve_offload_folder(
+            os.environ.get("AURA_WAN_OFFLOAD_FOLDER") or "/workspace/.offload"
+        )
 
         # Load tokenizer and text encoder first (smallest)
         tokenizer = T5TokenizerFast.from_pretrained(

@@ -77,9 +77,11 @@ python -c "from PIL import Image; Image.open('$INPUT_IMG').verify()" \
   || fail "extracted image not decodable"
 ok "input image $(du -h "$INPUT_IMG" | cut -f1)"
 
-FREE_KB=$(df -k /workspace | tail -1 | awk '{print $4}')
-[[ "$FREE_KB" -gt 104857600 ]] || fail "only $((FREE_KB / 1024 / 1024))GB free on /workspace, need 100GB+"
-ok "disk free $((FREE_KB / 1024 / 1024))GB"
+# NOTE: df lies on RunPod network mounts (reports cluster-wide petabytes).
+# Measure real usage with du against the 200GB volume quota instead.
+USED_KB=$(du -sk /workspace 2>/dev/null | cut -f1)
+[[ "$USED_KB" -lt 188743680 ]] || fail "/workspace uses $((USED_KB / 1024 / 1024))GB of 200GB quota — free space first"
+ok "volume used $((USED_KB / 1024 / 1024))GB of 200GB"
 
 export HF_HOME=/workspace/.hf-cache HF_HUB_CACHE=/workspace/.hf-cache
 cd "$BACKEND"

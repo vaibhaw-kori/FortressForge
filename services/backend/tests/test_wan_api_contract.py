@@ -153,6 +153,36 @@ class TestPipelinePlacement:
         assert calls == [("to", "cuda"), ("seq_offload",)]
 
 
+class TestOffloadFolder:
+    def test_empty_string_falls_back_to_volume(self, tmp_path, monkeypatch):
+        from aura_backend.inference.wan_loader import resolve_offload_folder
+
+        monkeypatch.setenv("AURA_WAN_OFFLOAD_FOLDER", "")
+        # Empty must resolve to the explicit preferred path, never system /tmp.
+        out = resolve_offload_folder(str(tmp_path / "off"))
+        assert out == str(tmp_path / "off")
+
+    def test_uncreatable_path_uses_temp(self, tmp_path):
+        import tempfile
+
+        from aura_backend.inference.wan_loader import resolve_offload_folder
+
+        # A directory can never be created *inside* a regular file, on any OS.
+        blocker = tmp_path / "afile"
+        blocker.write_bytes(b"x")
+        bad = str(blocker / "off")
+        out = resolve_offload_folder(bad)
+        assert out.startswith(tempfile.gettempdir())
+        assert out != bad
+
+    def test_explicit_preferred_path_used_verbatim(self, tmp_path):
+        from aura_backend.inference.wan_loader import resolve_offload_folder
+
+        # No env consulted here: the caller applies the env-or-default first.
+        out = resolve_offload_folder(str(tmp_path / "mine"))
+        assert out == str(tmp_path / "mine")
+
+
 class TestTemporalLattice:
     def test_snap_matches_pipeline_floor(self):
         from aura_backend.inference.wan_config import snap_num_frames
