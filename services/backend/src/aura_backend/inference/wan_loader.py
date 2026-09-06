@@ -52,6 +52,23 @@ def _require_torch() -> None:
         )
 
 
+def place_pipeline_on_device(
+    pipeline: Any, *, enable_offload: bool, offload_to_cpu: bool, device: Any
+) -> Any:
+    """Place a diffusers pipeline for inference without OOMing the move itself.
+
+    - model CPU offload owns placement: enable it directly, never .to() first.
+    - otherwise move wholesale with .to(device), then optionally sequential offload.
+    """
+    if enable_offload:
+        pipeline.enable_model_cpu_offload()
+        return pipeline
+    moved = pipeline.to(device)
+    if offload_to_cpu:
+        moved.enable_sequential_cpu_offload()
+    return moved
+
+
 @dataclass
 class ModelComponents:
     """Loaded model components."""
@@ -349,17 +366,17 @@ class WanModelLoader:
             except Exception:
                 pass
         else:
-            # Move to device
-            pipeline = pipeline.to(self.device)
+            # Place on device (offload strategies own placement; a blind
+            # .to("cuda") of a ~30GB model onto a 24GB card OOMs first).
+            pipeline = place_pipeline_on_device(
+                pipeline,
+                enable_offload=self.config.enable_offload,
+                offload_to_cpu=self.config.offload_to_cpu,
+                device=self.device,
+            )
 
             # Enable VAE slicing for memory efficiency
             pipeline.vae.enable_slicing()
-
-            # Enable progressive CPU offload if configured
-            if self.config.enable_offload:
-                pipeline.enable_model_cpu_offload()
-            elif self.config.offload_to_cpu:
-                pipeline.enable_sequential_cpu_offload()
         
         return ModelComponents(
             transformer=transformer,

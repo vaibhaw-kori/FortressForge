@@ -113,6 +113,46 @@ class TestInferenceStageWithFakePipeline:
         assert out.metadata.get("inference_complete") is True
 
 
+class TestPipelinePlacement:
+    def test_model_offload_skips_blind_to_device(self):
+        from aura_backend.inference.wan_loader import place_pipeline_on_device
+
+        calls: list = []
+
+        class _FakePipe:
+            def to(self, device):
+                calls.append(("to", device))
+                return self
+
+            def enable_model_cpu_offload(self):
+                calls.append(("model_offload",))
+
+            def enable_sequential_cpu_offload(self):
+                calls.append(("seq_offload",))
+
+        place_pipeline_on_device(_FakePipe(), enable_offload=True, offload_to_cpu=False, device="cuda")
+        assert calls == [("model_offload",)]
+
+    def test_plain_move_then_optional_sequential(self):
+        from aura_backend.inference.wan_loader import place_pipeline_on_device
+
+        calls: list = []
+
+        class _FakePipe:
+            def to(self, device):
+                calls.append(("to", device))
+                return self
+
+            def enable_model_cpu_offload(self):
+                calls.append(("model_offload",))
+
+            def enable_sequential_cpu_offload(self):
+                calls.append(("seq_offload",))
+
+        place_pipeline_on_device(_FakePipe(), enable_offload=False, offload_to_cpu=True, device="cuda")
+        assert calls == [("to", "cuda"), ("seq_offload",)]
+
+
 class TestTemporalLattice:
     def test_snap_matches_pipeline_floor(self):
         from aura_backend.inference.wan_config import snap_num_frames
