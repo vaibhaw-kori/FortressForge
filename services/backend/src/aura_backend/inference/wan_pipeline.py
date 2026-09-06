@@ -416,9 +416,9 @@ class ModelLoadingStage(PipelineStage):
             try:
                 # Get or create loader
                 loader = get_wan_loader(ctx.model_config)
-                
+
                 # Load model (uses cache)
-                components = ctx.model_config.load()
+                components = loader.load()
                 
                 ctx.pipeline = components.pipeline
                 ctx.metadata["model_loaded"] = True
