@@ -223,6 +223,19 @@ class WanModelLoader:
         # Determine model repo
         model_repo = self.config.local_model_path or DEFAULT_MODEL_REPO
 
+        # Small pods: stream weights with accelerate device_map + disk
+        # offload so RAM never holds them all (defined up-front: the text
+        # encoder block below runs before the transformer block).
+        _disk_offload = bool(self.config.offload_to_cpu)
+        _offload_folder = os.environ.get("AURA_WAN_OFFLOAD_FOLDER", "/workspace/.offload")
+        if _disk_offload:
+            try:
+                os.makedirs(_offload_folder, exist_ok=True)
+            except Exception:
+                import tempfile as _tf
+
+                _offload_folder = _tf.mkdtemp(prefix="aura_offload_")
+
         # Load tokenizer and text encoder first (smallest)
         tokenizer = T5TokenizerFast.from_pretrained(
             model_repo,
@@ -271,17 +284,8 @@ class WanModelLoader:
                     pass
         
         # Load transformer (largest component, ~65GB on disk).
-        # When offload_to_cpu is set (small pods), stream weights with an
-        # accelerate device map + disk offload so RAM never holds it all.
-        _disk_offload = bool(self.config.offload_to_cpu)
-        _offload_folder = os.environ.get("AURA_WAN_OFFLOAD_FOLDER", "/workspace/.offload")
-        if _disk_offload:
-            try:
-                os.makedirs(_offload_folder, exist_ok=True)
-            except Exception:
-                import tempfile as _tf
-
-                _offload_folder = _tf.mkdtemp(prefix="aura_offload_")
+        # _disk_offload/_offload_folder were set up at the top of this
+        # function (the text-encoder block above runs first).
         if _disk_offload:
             transformer = WanTransformer3DModel.from_pretrained(
                 model_repo,
