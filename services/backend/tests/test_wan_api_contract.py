@@ -107,6 +107,29 @@ class TestInferenceStageWithFakePipeline:
         out = InferenceStage()(ctx)
         assert "image" in seen  # would have raised TypeError on T2V class
         assert seen["output_type"] == "pil"
-        assert seen["num_frames"] == 48
+        # Default 4s@12fps snaps 48 -> 49 on the VAE temporal lattice.
+        assert seen["num_frames"] == 49
         assert out.video_frames is not None and len(out.video_frames) == 3
         assert out.metadata.get("inference_complete") is True
+
+
+class TestTemporalLattice:
+    def test_snap_matches_pipeline_floor(self):
+        from aura_backend.inference.wan_config import snap_num_frames
+
+        assert snap_num_frames(48) == 49  # default 4s @ 12fps
+        assert snap_num_frames(81) == 81  # already on lattice
+        assert snap_num_frames(8) == 9
+        assert snap_num_frames(45) == 45
+
+    def test_config_snaps_by_default(self):
+        from aura_backend.inference.wan_config import WanGenerationConfig
+
+        cfg = WanGenerationConfig(prompt="a cinematic test prompt")
+        assert cfg.num_frames == 49
+
+    def test_ftfy_importable_for_wan_prompt_cleaning(self):
+        # diffusers' Wan basic_clean calls ftfy.fix_text; without the package
+        # prompt encoding dies with NameError deep inside inference.
+        ftfy = pytest.importorskip("ftfy")
+        assert ftfy.fix_text("hello") == "hello"

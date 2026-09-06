@@ -87,6 +87,18 @@ MAX_FRAMES_BY_RESOLUTION = {
     (1920, 1080): 48,
 }
 
+# Wan VAE temporal compression: (num_frames - 1) must be divisible by this.
+# Mirrors diffusers pipelines/wan/pipeline_wan_i2v.py, which floors
+# `num_frames // factor * factor + 1` (despite its "rounding" log message).
+WAN_TEMPORAL_FACTOR = 4
+
+
+def snap_num_frames(num_frames: int, factor: int = WAN_TEMPORAL_FACTOR) -> int:
+    """Snap a frame count onto the VAE temporal lattice, like the pipeline."""
+    if num_frames % factor != 1:
+        return num_frames // factor * factor + 1
+    return num_frames
+
 
 @dataclass(frozen=True)
 class WanModelConfig:
@@ -148,6 +160,12 @@ class WanGenerationConfig:
                 self.num_frames = int(self.fps * self.duration_sec)
             except Exception:
                 pass
+        # Snap onto the VAE temporal lattice so the pipeline never silently
+        # re-times the video (48 -> 49 for the default 4s@12fps).
+        try:
+            self.num_frames = snap_num_frames(int(self.num_frames))
+        except Exception:
+            pass
 
     def to_dict(self) -> dict:
         return {

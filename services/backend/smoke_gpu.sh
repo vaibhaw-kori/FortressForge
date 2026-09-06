@@ -38,6 +38,8 @@ ok() { echo "GATE OK: $1"; }
 [[ -n "${VIRTUAL_ENV:-}" ]] || fail "venv not active. Run: source /workspace/FortressForge/.venv/bin/activate"
 python -c "import aura_backend" 2>/dev/null || fail "aura_backend not importable. Reinstall: pip install -e ./services/backend"
 ok "venv + package"
+python -c "import ftfy" 2>/dev/null || fail "ftfy missing (Wan prompt cleaning needs it). Run: pip install ftfy"
+ok "ftfy"
 
 python -c "import torch; assert torch.cuda.is_available(), 'no cuda'" 2>/dev/null \
   || fail "CUDA not visible to torch"
