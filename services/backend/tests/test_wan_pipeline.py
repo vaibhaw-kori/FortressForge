@@ -70,7 +70,7 @@ class TestWanConfig:
         # Test various invalid configurations
         test_cases = [
             ({"prompt": "x"}, ["Prompt too short"]),
-            ({"prompt": "test", "num_inference_steps": 5}, ["num_inference_steps"]),
+            ({"prompt": "test", "num_inference_steps": 2}, ["num_inference_steps"]),
             ({"prompt": "test", "num_inference_steps": 55}, ["num_inference_steps"]),
             ({"prompt": "test", "guidance_scale": 0.5}, ["guidance_scale"]),
             ({"prompt": "test", "guidance_scale": 25}, ["guidance_scale"]),

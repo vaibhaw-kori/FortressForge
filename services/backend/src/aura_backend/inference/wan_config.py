@@ -65,7 +65,7 @@ DEFAULT_WAN_PARAMS = {
     "num_frames": 48,  # 4 seconds @ 12fps
     "guidance_scale_min": 1.0,
     "guidance_scale_max": 20.0,
-    "num_inference_steps_min": 10,
+    "num_inference_steps_min": 4,
     "num_inference_steps_max": 50,
 }
 
@@ -136,7 +136,7 @@ class WanGenerationConfig:
     num_frames: int = 48
     guidance_scale_min: float = 1.0
     guidance_scale_max: float = 20.0
-    num_inference_steps_min: int = 10
+    num_inference_steps_min: int = 4
     num_inference_steps_max: int = 50
     seed_policy: str = "visitor_derived"  # "visitor_derived", "random", "fixed"
     fixed_seed: int | None = None
@@ -268,8 +268,8 @@ def validate_generation_config(config: WanGenerationConfig) -> tuple[bool, list[
     if not config.prompt or len(config.prompt.strip()) < 5:
         errors.append("Prompt too short (min 5 characters)")
     
-    if config.num_inference_steps < 10 or config.num_inference_steps > 50:
-        errors.append("num_inference_steps must be between 10 and 50")
+    if config.num_inference_steps < 4 or config.num_inference_steps > 50:
+        errors.append("num_inference_steps must be between 4 and 50")
     
     if config.guidance_scale < 1.0 or config.guidance_scale > 20.0:
         errors.append("guidance_scale must be between 1.0 and 20.0")

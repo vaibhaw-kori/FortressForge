@@ -57,7 +57,7 @@ class TestValidateConfig:
         [
             ({"prompt": "x"}, "Prompt too short"),
             ({"prompt": ""}, "Prompt too short"),
-            ({"num_inference_steps": 5}, "num_inference_steps"),
+            ({"num_inference_steps": 2}, "num_inference_steps"),
             ({"num_inference_steps": 55}, "num_inference_steps"),
             ({"guidance_scale": 0.5}, "guidance_scale"),
             ({"guidance_scale": 25.0}, "guidance_scale"),
