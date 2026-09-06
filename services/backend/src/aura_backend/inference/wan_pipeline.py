@@ -465,7 +465,37 @@ def _inference_device() -> str:
         return "cpu"
 
 
-def build_inference_kwargs(ctx: "PipelineContext") -> dict:
+def _pipeline_generator_device(pipeline: Any) -> str:
+    """Detect where the diffusion latents of the loaded pipeline live.
+
+    With `enable_model_cpu_offload()`, every model lives on the meta device
+    except the actively-decoding layer, but the seed generator must agree
+    with the latents' storage — otherwise diffusers raises "Cannot generate a
+    cpu tensor from a generator of type cuda". With pure `.to("cuda")` it
+    is just "cuda". With `offload_state_dict=True` (disk offload) there is
+    no single resident device, so fall back to the global default.
+    """
+    try:
+        import torch as _torch
+    except Exception:
+        return "cpu"
+    try:
+        for module in (
+            getattr(pipeline, "transformer", None),
+            getattr(pipeline, "unet", None),
+        ):
+            if module is None:
+                continue
+            for p in module.parameters():
+                dev = p.device
+                if dev.type in ("cuda", "cpu"):
+                    return dev.type
+    except Exception:
+        pass
+    return "cuda" if _torch.cuda.is_available() else "cpu"
+
+
+def build_inference_kwargs(ctx: "PipelineContext", pipeline: Any | None = None) -> dict:
     """Build the exact kwargs for WanImageToVideoPipeline.__call__.
 
     Audited against diffusers 0.33.1 (see tests/test_wan_api_contract.py).
@@ -474,6 +504,8 @@ def build_inference_kwargs(ctx: "PipelineContext") -> dict:
     callback/callback_steps (use callback_on_step_end).
     """
     import torch as _torch
+
+    gen_device = _pipeline_generator_device(pipeline) if pipeline is not None else _inference_device()
 
     kwargs: dict = {
         "image": ctx.capture_image,
@@ -486,13 +518,12 @@ def build_inference_kwargs(ctx: "PipelineContext") -> dict:
         "guidance_scale": ctx.config.guidance_scale,
         "output_type": "pil",
     }
-    device = _inference_device()
     if ctx.config.seed is not None:
-        kwargs["generator"] = _torch.Generator(device=device).manual_seed(ctx.config.seed)
+        kwargs["generator"] = _torch.Generator(device=gen_device).manual_seed(ctx.config.seed)
         ctx.seed = ctx.config.seed
     else:
         seed = int(_torch.randint(0, 2**32 - 1, (1,)).item())
-        kwargs["generator"] = _torch.Generator(device=device).manual_seed(seed)
+        kwargs["generator"] = _torch.Generator(device=gen_device).manual_seed(seed)
         ctx.seed = seed
     return kwargs
 
@@ -514,7 +545,7 @@ class InferenceStage(PipelineStage):
             return self._handle_error(ctx, RuntimeError("Pipeline not loaded"), "Inference failed")
 
         # Exact I2V contract — see build_inference_kwargs().
-        gen_kwargs = build_inference_kwargs(ctx)
+        gen_kwargs = build_inference_kwargs(ctx, pipeline)
 
         # diffusers>=0.31 progress hook: (pipe, step, timestep, kwargs) -> kwargs.
         def _on_step_end(pipe, step_index: int, timestep, callback_kwargs: dict) -> dict:

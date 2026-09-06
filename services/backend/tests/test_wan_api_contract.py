@@ -183,6 +183,56 @@ class TestOffloadFolder:
         assert out == str(tmp_path / "mine")
 
 
+class TestGeneratorDeviceMatchesPipeline:
+    def test_pure_cuda_pipeline_uses_cuda_generator(self):
+        from aura_backend.inference.wan_pipeline import _pipeline_generator_device
+
+        class _Tensor:
+            def __init__(self, type_): self.type = type_
+
+        class _P:
+            class _M:
+                def parameters(self_inner):
+                    return [type("P", (), {"device": _Tensor("cuda")})()]
+
+            transformer = _M()
+
+        assert _pipeline_generator_device(_P()) == "cuda"
+
+    def test_cpu_pipeline_uses_cpu_generator(self):
+        from aura_backend.inference.wan_pipeline import _pipeline_generator_device
+
+        class _Tensor:
+            def __init__(self, type_): self.type = type_
+
+        class _P:
+            class _M:
+                def parameters(self_inner):
+                    return [type("P", (), {"device": _Tensor("cpu")})()]
+
+            transformer = _M()
+
+        assert _pipeline_generator_device(_P()) == "cpu"
+
+    def test_offloaded_pipeline_falls_back_to_default(self):
+        from aura_backend.inference.wan_pipeline import _pipeline_generator_device
+
+        # With disk offload, all parameters report "meta" (no resident device).
+        class _Tensor:
+            def __init__(self, type_): self.type = type
+
+        class _P:
+            class _M:
+                def parameters(self_inner):
+                    return [type("P", (), {"device": _Tensor("meta")})()]
+
+            transformer = _M()
+
+        # CUDA box → falls back to cuda; CPU-only box → cpu. Either is
+        # the right answer here (the offload code re-places during the call).
+        assert _pipeline_generator_device(_P()) in {"cuda", "cpu"}
+
+
 class TestTemporalLattice:
     def test_snap_matches_pipeline_floor(self):
         from aura_backend.inference.wan_config import snap_num_frames
