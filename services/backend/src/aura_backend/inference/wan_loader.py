@@ -60,6 +60,8 @@ class ModelComponents:
     text_encoder: Any = None
     tokenizer: Any = None
     scheduler: Any = None
+    image_encoder: Any = None
+    image_processor: Any = None
     pipeline: Any = None
     config: "WanPipelineConfig" = None
 
@@ -75,6 +77,8 @@ class WanPipelineConfig:
     text_encoder: Any = None
     tokenizer: Any = None
     scheduler: Any = None
+    image_encoder: Any = None
+    image_processor: Any = None
 
 
 class WanModelLoader:
@@ -208,11 +212,12 @@ class WanModelLoader:
     def _load_components(self) -> ModelComponents:
         """Load all model components."""
         from diffusers import (
-            WanPipeline,
+            WanImageToVideoPipeline,
             WanTransformer3DModel,
             AutoencoderKLWan,
             UniPCMultistepScheduler,
         )
+        from transformers import CLIPImageProcessor, CLIPVisionModel
         # Wan 2.1 text encoder is UMT5 (model_type "umt5"), not plain T5.
         try:
             from transformers import UMT5EncoderModel as _TextEncoderClass
@@ -305,23 +310,34 @@ class WanModelLoader:
                 low_cpu_mem_usage=True,
             )
         
-        # Load scheduler
+        # Load scheduler (from_pretrained resolves the actual class
+        # from the repo's scheduler_config.json)
         scheduler = UniPCMultistepScheduler.from_pretrained(
             model_repo,
             subfolder="scheduler",
         )
-        
+
+        # Load image conditioning components (I2V needs both; ~1.3GB total)
+        image_encoder = CLIPVisionModel.from_pretrained(
+            model_repo,
+            subfolder="image_encoder",
+        )
+        image_processor = CLIPImageProcessor.from_pretrained(
+            model_repo,
+            subfolder="image_processor",
+        )
+
         # Apply optimizations
         self._apply_optimizations(text_encoder, vae, transformer)
-        
-        # Create pipeline
-        from diffusers import WanPipeline
-        
-        pipeline = WanPipeline(
+
+        # Create pipeline (image-to-video: takes image= as first input)
+        pipeline = WanImageToVideoPipeline(
+            tokenizer=tokenizer,
+            text_encoder=text_encoder,
+            image_encoder=image_encoder,
+            image_processor=image_processor,
             transformer=transformer,
             vae=vae,
-            text_encoder=text_encoder,
-            tokenizer=tokenizer,
             scheduler=scheduler,
         )
         
@@ -351,6 +367,8 @@ class WanModelLoader:
             text_encoder=text_encoder,
             tokenizer=tokenizer,
             scheduler=scheduler,
+            image_encoder=image_encoder,
+            image_processor=image_processor,
             pipeline=pipeline,
             config=self._create_pipeline_config(),
         )

@@ -12,6 +12,8 @@
 #   6. run inference in background, follow /tmp/smoke.log
 #
 # Usage: bash smoke_gpu.sh [--steps 16] [--experience aurora]
+# Runs FOREGROUND by default (waits, verifies mp4, exits non-zero on failure).
+# Set SMOKE_BACKGROUND=1 for nohup background mode (SSH-drop safe).
 set -euo pipefail
 
 STEPS=16
@@ -79,8 +81,40 @@ ok "disk free $((FREE_KB / 1024 / 1024))GB"
 
 export HF_HOME=/workspace/.hf-cache HF_HUB_CACHE=/workspace/.hf-cache
 cd "$BACKEND"
-nohup python -m aura_backend.inference.wan_standalone \
+rm -f "$OUTPUT_MP4"
+if [[ "${SMOKE_BACKGROUND:-0}" == "1" ]]; then
+  # Unattended mode (survives SSH drops); caller tails /tmp/smoke.log.
+  nohup python -m aura_backend.inference.wan_standalone \
+    --image "$INPUT_IMG" --experience "$EXPERIENCE" \
+    --output "$OUTPUT_MP4" --steps "$STEPS" > /tmp/smoke.log 2>&1 &
+  echo "render started pid $! — follow with: tail -f /tmp/smoke.log"
+  echo "verify at the end with: ls -la /tmp/smoke.mp4"
+  exit 0
+fi
+# Foreground mode (default): wait, propagate exit status, verify output.
+set +e
+python -m aura_backend.inference.wan_standalone \
   --image "$INPUT_IMG" --experience "$EXPERIENCE" \
-  --output "$OUTPUT_MP4" --steps "$STEPS" > /tmp/smoke.log 2>&1 &
-echo "render started pid $! — follow with: tail -f /tmp/smoke.log"
-echo "verify at the end with: ls -la /tmp/smoke.mp4"
+  --output "$OUTPUT_MP4" --steps "$STEPS" 2>&1 | tee /tmp/smoke.log
+CODE=${PIPESTATUS[0]:-$?}
+set -e
+if [[ $CODE -ne 0 ]]; then
+  echo "SMOKE FAIL: inference exited $CODE (see /tmp/smoke.log)"
+  exit $CODE
+fi
+[[ -s "$OUTPUT_MP4" ]] || { echo "SMOKE FAIL: $OUTPUT_MP4 missing/empty"; exit 1; }
+SIZE=$(du -h "$OUTPUT_MP4" | cut -f1)
+[[ $(stat -c%s "$OUTPUT_MP4") -gt 100000 ]] || { echo "SMOKE FAIL: output suspiciously small ($SIZE)"; exit 1; }
+echo "SMOKE PASS: $OUTPUT_MP4 ($SIZE)"
+python3 - "$OUTPUT_MP4" <<'EOF' || echo "SMOKE WARN: cv2 metadata probe failed"
+import sys
+import cv2
+cap = cv2.VideoCapture(sys.argv[1])
+n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+fps = cap.get(cv2.CAP_PROP_FPS)
+w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+cap.release()
+print(f"frames={n} fps={fps:.1f} size={w}x{h} duration={n / fps if fps else 0:.1f}s")
+assert n >= 8, "too few frames"
+EOF

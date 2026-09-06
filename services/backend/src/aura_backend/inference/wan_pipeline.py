@@ -81,9 +81,9 @@ from ..storage import get_storage
 # submodule fails, so catch both — a broken/partial diffusers install must
 # never take down the whole backend import chain (mock mode needs none of it).
 try:
-    from diffusers import WanPipeline  # type: ignore[import-not-found]
+    from diffusers import WanImageToVideoPipeline  # type: ignore[import-not-found]
 except (ImportError, RuntimeError):  # pragma: no cover
-    WanPipeline = None  # type: ignore[assignment]
+    WanImageToVideoPipeline = None  # type: ignore[assignment]
 
 try:
     import numpy as np  # type: ignore[import-not-found]
@@ -455,13 +455,55 @@ class ModelLoadingStage(PipelineStage):
 # Stage 6: Inference
 # ============================================================
 
+def _inference_device() -> str:
+    """CUDA when available, else CPU (lets contract tests run on CPU boxes)."""
+    try:
+        import torch as _torch
+
+        return "cuda" if _torch.cuda.is_available() else "cpu"
+    except Exception:
+        return "cpu"
+
+
+def build_inference_kwargs(ctx: "PipelineContext") -> dict:
+    """Build the exact kwargs for WanImageToVideoPipeline.__call__.
+
+    Audited against diffusers 0.33.1 (see tests/test_wan_api_contract.py).
+    Deliberately EXCLUDED (not accepted by the pipeline):
+    fps (fold into num_frames beforehand), seed (use generator),
+    callback/callback_steps (use callback_on_step_end).
+    """
+    import torch as _torch
+
+    kwargs: dict = {
+        "image": ctx.capture_image,
+        "prompt": ctx.config.prompt,
+        "negative_prompt": ctx.config.negative_prompt,
+        "height": ctx.config.height,
+        "width": ctx.config.width,
+        "num_frames": ctx.config.num_frames,
+        "num_inference_steps": ctx.config.num_inference_steps,
+        "guidance_scale": ctx.config.guidance_scale,
+        "output_type": "pil",
+    }
+    device = _inference_device()
+    if ctx.config.seed is not None:
+        kwargs["generator"] = _torch.Generator(device=device).manual_seed(ctx.config.seed)
+        ctx.seed = ctx.config.seed
+    else:
+        seed = int(_torch.randint(0, 2**32 - 1, (1,)).item())
+        kwargs["generator"] = _torch.Generator(device=device).manual_seed(seed)
+        ctx.seed = seed
+    return kwargs
+
+
 class InferenceStage(PipelineStage):
     """Stage 6: Run the actual video generation inference."""
-    
+
     name = "inference"
     required = True
     max_oom_retries = 2
-    
+
     def __call__(self, ctx: "PipelineContext") -> "PipelineContext":
         try:
             _require_torch()
@@ -470,46 +512,24 @@ class InferenceStage(PipelineStage):
         pipeline = ctx.pipeline
         if not pipeline:
             return self._handle_error(ctx, RuntimeError("Pipeline not loaded"), "Inference failed")
-        
-        # Prepare generation arguments
-        gen_kwargs = {
-            "prompt": ctx.config.prompt,
-            "negative_prompt": ctx.config.negative_prompt,
-            "image": ctx.capture_image,
-            "num_inference_steps": ctx.config.num_inference_steps,
-            "guidance_scale": ctx.config.guidance_scale,
-            "num_frames": ctx.config.num_frames,
-            "height": ctx.config.height,
-            "width": ctx.config.width,
-            "fps": ctx.config.fps,
-        }
-        
-        # Add seed if specified
-        if ctx.config.seed is not None:
-            gen_kwargs["generator"] = torch.Generator(device="cuda").manual_seed(ctx.config.seed)
-            ctx.seed = ctx.config.seed
-        else:
-            # Generate random seed
-            seed = torch.randint(0, 2**32 - 1, (1,)).item()
-            gen_kwargs["generator"] = torch.Generator(device="cuda").manual_seed(seed)
-            ctx.seed = seed
-        
+
+        # Exact I2V contract — see build_inference_kwargs().
+        gen_kwargs = build_inference_kwargs(ctx)
+
+        # diffusers>=0.31 progress hook: (pipe, step, timestep, kwargs) -> kwargs.
+        def _on_step_end(pipe, step_index: int, timestep, callback_kwargs: dict) -> dict:
+            return callback_kwargs
+
         # Run inference with OOM retry logic
         for oom_retry in range(self.max_oom_retries + 1):
             try:
                 # Run inference with progress callback
                 start_time = time.time()
-                
-                def progress_callback(step: int, timestep: int, latents: torch.Tensor):
-                    progress = 1.0 - (step / ctx.config.num_inference_steps)
-                    # Could emit progress event here
-                    pass
-                
+
                 with inference_mode():
                     output = pipeline(
                         **gen_kwargs,
-                        callback=progress_callback,
-                        callback_steps=1,
+                        callback_on_step_end=_on_step_end,
                     )
                 
                 inference_time = time.time() - start_time
@@ -602,6 +622,9 @@ class PostProcessingStage(PipelineStage):
                     frame = (frame * 255).astype(np.uint8)
                     frame = Image.fromarray(frame)
                 elif isinstance(frame, np.ndarray):
+                    if frame.dtype != np.uint8:
+                        frame = np.clip(frame, 0, 1)
+                        frame = (frame * 255).astype(np.uint8)
                     frame = Image.fromarray(frame)
                 elif not isinstance(frame, Image.Image):
                     raise TypeError(f"Unexpected frame type: {type(frame)}")
