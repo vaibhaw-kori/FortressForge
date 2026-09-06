@@ -201,6 +201,38 @@ class InputValidationStage(PipelineStage):
 # Stage 2: Image Preprocessing
 # ============================================================
 
+# Standalone (local-debug) capture refs bypass object storage.
+LOCAL_REF_PREFIX = "local:"
+# Match the captures API limit (captures.py MAX_CAPTURE_BYTES).
+MAX_LOCAL_IMAGE_BYTES = 8 * 1024 * 1024
+
+
+def load_image_bytes(capture_ref: str) -> bytes:
+    """Resolve a capture ref to raw image bytes.
+
+    - ``local:/abs/path.jpg`` → read from the local filesystem (used only by
+      wan_standalone; the worker path always uses storage keys).
+    - anything else → object storage key.
+    """
+    if capture_ref.startswith(LOCAL_REF_PREFIX):
+        path = capture_ref[len(LOCAL_REF_PREFIX):]
+        if not path or not os.path.exists(path):
+            raise FileNotFoundError(f"Local capture image not found: {path or capture_ref}")
+        if not os.path.isfile(path):
+            raise ValidationFailed(f"Local capture ref is not a file: {path}")
+        size = os.path.getsize(path)
+        if size > MAX_LOCAL_IMAGE_BYTES:
+            raise ValidationFailed(
+                f"Local capture image too large: {size} bytes (max {MAX_LOCAL_IMAGE_BYTES})"
+            )
+        if size == 0:
+            raise ValidationFailed(f"Local capture image is empty: {path}")
+        with open(path, "rb") as f:
+            return f.read()
+    # Module-global on purpose: tests monkeypatch wan_pipeline.get_storage.
+    return get_storage().get(capture_ref)
+
+
 class ImagePreprocessingStage(PipelineStage):
     """Stage 2: Load and preprocess the captured image."""
     
@@ -231,12 +263,18 @@ class ImagePreprocessingStage(PipelineStage):
                 "Image preprocessing failed",
             )
         try:
-            # Load image from storage
-            storage = get_storage()
-            image_bytes = storage.get(ctx.capture_ref)
-            
-            # Load image
-            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+            # Load image bytes (storage key, or local: path for standalone)
+            image_bytes = load_image_bytes(ctx.capture_ref)
+
+            # Load image (apply EXIF orientation: phone captures are rotated)
+            image = Image.open(io.BytesIO(image_bytes))
+            try:
+                from PIL import ImageOps as _ImageOps
+
+                image = _ImageOps.exif_transpose(image)
+            except Exception:
+                pass
+            image = image.convert("RGB")
             ctx.metadata["original_size"] = image.size
             ctx.metadata["original_mode"] = image.mode
             
@@ -904,9 +942,13 @@ class WanInferencePipeline:
                     stage.name
                 )
             except PipelineError as e:
+                # Preserve the ORIGINAL cause (type + message); str(e) alone
+                # would only repeat the generic stage message.
+                orig = e.original_error
                 ctx.errors.append({
                     "stage": stage.name,
-                    "error": str(e),
+                    "error": str(orig) if orig is not None else str(e),
+                    "type": type(orig).__name__ if orig is not None else type(e).__name__,
                     "message": e.message,
                 })
                 break
@@ -918,13 +960,18 @@ class WanInferencePipeline:
                 })
                 break
         
-        # Check for errors
+        # Check for errors — surface the ORIGINAL cause (type + message +
+        # paths/dimensions) instead of only the generic stage message.
         if ctx.errors:
             error = ctx.errors[-1]
-            raise ProviderError(
-                error["stage"],
-                error["message"],
-            )
+            orig_msg = str(error.get("error") or "")
+            orig_type = str(error.get("type") or "")
+            message = str(error.get("message") or "pipeline failed")
+            if orig_msg and orig_msg != message:
+                detail = f"{message} [{orig_type + ': ' if orig_type else ''}{orig_msg}]"
+            else:
+                detail = message
+            raise ProviderError(error["stage"], detail)
         
         # Compile result (VideoAsset is a frozen dataclass — serialize manually)
         video_asset_dict = None

@@ -54,6 +54,18 @@ cap = cv2.VideoCapture(sys.argv[1])
 ok, frame = cap.read()
 cap.release()
 assert ok and frame is not None, "could not decode first frame"
+# Center-crop to 9:16 portrait (the pipeline resizes unconditionally, but a
+# landscape frame stretched to portrait would distort the subject).
+h, w = frame.shape[:2]
+target = 9 / 16
+if w / h > target:  # too wide -> crop width
+    nw = int(h * target)
+    x = (w - nw) // 2
+    frame = frame[:, x:x + nw]
+else:  # too tall -> crop height
+    nh = int(w / target)
+    y = (h - nh) // 2
+    frame = frame[y:y + nh, :]
 assert cv2.imwrite(sys.argv[2], frame), "could not write jpeg"
 EOF
 [[ -s "$INPUT_IMG" ]] || fail "extracted frame is empty"

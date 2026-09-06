@@ -353,3 +353,109 @@ class TestCaptureSimulations:
         with pytest.raises(PipelineError) as ei2:
             ImagePreprocessingStage()(_ctx(capture_ref=""))
         assert isinstance(ei2.value.original_error, ValidationFailed)
+
+
+# ---------------------------------------------------------------------------
+# local: capture refs (wan_standalone) + error-cause preservation
+# ---------------------------------------------------------------------------
+
+
+def _make_jpeg(path, size=(64, 64), color=(10, 20, 30)):
+    PILImage = pytest.importorskip("PIL.Image")
+    img = PILImage.new("RGB", size, color=color)
+    img.save(str(path), "JPEG")
+    return path
+
+
+class TestLoadImageBytes:
+    def test_valid_local_jpeg(self, tmp_path):
+        from aura_backend.inference.wan_pipeline import load_image_bytes
+
+        p = _make_jpeg(tmp_path / "cap.jpg")
+        data = load_image_bytes(f"local:{p}")
+        assert data[:2] == b"\xff\xd8"  # JPEG magic
+
+    def test_missing_local_file(self, tmp_path):
+        from aura_backend.inference.wan_pipeline import load_image_bytes
+
+        missing = str(tmp_path / "nope.jpg")
+        with pytest.raises(FileNotFoundError) as ei:
+            load_image_bytes(f"local:{missing}")
+        assert missing in str(ei.value)
+
+    def test_local_directory_rejected(self, tmp_path):
+        from aura_backend.inference.wan_pipeline import load_image_bytes
+
+        with pytest.raises(ValidationFailed):
+            load_image_bytes(f"local:{tmp_path}")
+
+    def test_local_oversize_rejected(self, tmp_path):
+        from aura_backend.inference.wan_pipeline import (
+            MAX_LOCAL_IMAGE_BYTES,
+            load_image_bytes,
+        )
+
+        big = tmp_path / "big.jpg"
+        big.write_bytes(b"\xff\xd8\xff" + b"\x00" * MAX_LOCAL_IMAGE_BYTES)
+        with pytest.raises(ValidationFailed):
+            load_image_bytes(f"local:{big}")
+
+    def test_storage_key_passthrough(self, monkeypatch):
+        from aura_backend.inference import wan_pipeline as wp
+
+        seen = {}
+
+        class _S:
+            def get(self, key):
+                seen["key"] = key
+                return b"bytes-from-storage"
+
+        monkeypatch.setattr(wp, "get_storage", lambda: _S())
+        assert wp.load_image_bytes("captures/x.jpg") == b"bytes-from-storage"
+        assert seen["key"] == "captures/x.jpg"
+
+    def test_colon_key_without_local_prefix_still_goes_to_storage(self, monkeypatch):
+        # Regression: only the explicit local: scheme reads the filesystem.
+        from aura_backend.inference import wan_pipeline as wp
+
+        class _S:
+            def get(self, key):
+                return b"storage-bytes"
+
+        monkeypatch.setattr(wp, "get_storage", lambda: _S())
+        assert wp.load_image_bytes("weird:key.jpg") == b"storage-bytes"
+
+
+class TestPreprocessingCausePreserved:
+    def test_stage_local_missing_keeps_filenotfound_cause(self):
+        import aura_backend.inference.wan_pipeline as wp
+
+        if not wp._TORCH_AVAILABLE or wp.T is None:
+            pytest.skip("needs torch+torchvision")
+        with pytest.raises(PipelineError) as ei:
+            ImagePreprocessingStage()(_ctx(capture_ref="local:/no/such/file.jpg"))
+        assert isinstance(ei.value.original_error, FileNotFoundError)
+        assert "/no/such/file.jpg" in str(ei.value.original_error)
+
+    def test_run_error_message_contains_original_cause(self):
+        import asyncio
+
+        from aura_backend.errors import ProviderError
+        from aura_backend.inference.wan_pipeline import WanInferencePipeline
+        from aura_backend.inference.wan_config import WanModelConfig
+
+        async def _go():
+            pipe = WanInferencePipeline(
+                model_config=WanModelConfig(),
+                generation_config=_ctx().config,
+                job_id="job-1",
+                session_id="sess-1",
+                experience_id="aurora",
+                capture_ref="",  # fails input validation deterministically
+            )
+            await pipe.run(capture_ref="")
+
+        with pytest.raises(ProviderError) as ei:
+            asyncio.run(_go())
+        assert ei.value.code == "input_validation"
+        assert "Missing capture reference" in ei.value.message
