@@ -150,7 +150,13 @@ def main():
     parser.add_argument("--model-repo", default="Wan-AI/Wan2.1-I2V-14B-480P-Diffusers", help="HF model repo")
     parser.add_argument("--local-path", help="Local model path (optional)")
     parser.add_argument("--offload", action="store_true", help="Enable CPU offload")
-    parser.add_argument("--cpu-offload", action="store_true", help="Enable sequential CPU offload")
+    # Default ON: small GPUs need disk-streamed loading; A6000 users pass --no-cpu-offload.
+    parser.add_argument(
+        "--cpu-offload",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable sequential CPU offload (default: on)",
+    )
     
     args = parser.parse_args()
     
