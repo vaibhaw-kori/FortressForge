@@ -60,23 +60,26 @@ async def run_inference(
     progress_callback=None,
 ) -> dict:
     """Run the inference pipeline."""
-    
-    # Load model
-    print(f"Loading model: {model_config.variant.value}...")
-    loader = WanModelLoader(model_config)
-    components = loader.load()
-    print("Model loaded successfully")
-    
-    # Load and preprocess image
     from PIL import Image
+
+    # Validate inputs FIRST so a missing image fails in seconds, not after
+    # a multi-minute model load.
+    if not os.path.exists(image_path):
+        raise FileNotFoundError(f"Input image not found: {image_path}")
     image = Image.open(image_path).convert("RGB")
     print(f"Loaded image: {image.size}")
-    
+
+    # Load model once (singleton cache is reused by the pipeline stages).
+    print(f"Loading model: {model_config.variant.value}...")
+    loader = WanModelLoader(model_config)
+    loader.load()
+    print("Model loaded successfully")
+
     # Build prompt
     prompt = build_wan_prompt(experience_id, "a person")
     print(f"Prompt: {prompt[:100]}...")
-    
-    # Create generation config with prompt
+
+    # Create generation config with prompt (width/height, not strings)
     gen_config = WanGenerationConfig(
         prompt=prompt,
         negative_prompt="",
@@ -86,12 +89,11 @@ async def run_inference(
         seed=generation_config.seed,
         fps=generation_config.fps,
         duration_sec=generation_config.duration_sec,
-        resolution=generation_config.resolution,
-        aspect_ratio=generation_config.aspect_ratio,
+        width=generation_config.width,
+        height=generation_config.height,
     )
-    
-    # Create pipeline
-    factory = WanPipelineFactory(model_config)
+
+    # Create pipeline (ModelLoadingStage reuses the warmed singleton loader)
     pipeline = WanInferencePipeline(
         model_config=model_config,
         generation_config=gen_config,
@@ -100,23 +102,7 @@ async def run_inference(
         experience_id=experience_id,
         capture_ref="local:" + image_path,
     )
-    
-    # Override pipeline with our loaded components
-    from aura_backend.inference.wan_loader import get_wan_loader
-    loader = get_wan_loader(model_config)
-    components = loader.load()
-    
-    # We need to inject our loaded components into the pipeline
-    pipeline = WanInferencePipeline(
-        model_config=model_config,
-        generation_config=gen_config,
-        job_id="standalone-" + str(uuid.uuid4().hex[:8]),
-        session_id="standalone-session",
-        experience_id=experience_id,
-        capture_ref="local:" + image_path,
-    )
-    pipeline.pipeline = get_wan_loader(model_config).get_pipeline()
-    
+
     # Run pipeline
     result = await pipeline.run(capture_ref="local:" + image_path)
     
@@ -188,6 +174,7 @@ def main():
         duration_sec=args.duration,
         width=width,
         height=height,
+        num_frames=int(args.fps * args.duration),
     )
     
     # Run inference
