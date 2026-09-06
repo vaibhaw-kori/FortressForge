@@ -437,6 +437,45 @@ class TestPreprocessingCausePreserved:
         assert isinstance(ei.value.original_error, FileNotFoundError)
         assert "/no/such/file.jpg" in str(ei.value.original_error)
 
+class TestModelLoadingStageUsesLoader:
+    def test_config_has_no_load_method(self):
+        # Contract: WanModelConfig is data, not a loader. If this ever gains
+        # a load() method, the stage test below would pass for the wrong reason.
+        from aura_backend.inference.wan_config import WanModelConfig
+
+        assert not hasattr(WanModelConfig(), "load")
+
+    def test_stage_calls_loader_load(self, monkeypatch):
+        # No 14B download: inject a fake loader and verify the stage uses it.
+        from aura_backend.inference import wan_pipeline as wp
+        from aura_backend.inference.wan_loader import ModelComponents
+
+        calls = {}
+
+        class _FakeLoader:
+            def load(self):
+                calls["load_called"] = True
+                return ModelComponents(pipeline="fake-pipe")
+
+        monkeypatch.setattr(wp, "get_wan_loader", lambda cfg: _FakeLoader())
+        out = wp.ModelLoadingStage()(_ctx())
+        assert calls.get("load_called") is True
+        assert out.pipeline == "fake-pipe"
+        assert out.metadata.get("model_loaded") is True
+
+    def test_stage_loader_failure_preserves_cause(self, monkeypatch):
+        from aura_backend.inference import wan_pipeline as wp
+
+        class _BoomLoader:
+            def load(self):
+                raise RuntimeError("disk exploded")
+
+        monkeypatch.setattr(wp, "get_wan_loader", lambda cfg: _BoomLoader())
+        with pytest.raises(PipelineError) as ei:
+            wp.ModelLoadingStage()(_ctx())
+        assert isinstance(ei.value.original_error, RuntimeError)
+        assert "disk exploded" in str(ei.value.original_error)
+
     def test_run_error_message_contains_original_cause(self):
         import asyncio
 
