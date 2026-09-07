@@ -383,6 +383,79 @@ class TestEncodeValidateOrdering:
         assert "not found" in str(ei.value.original_error).lower()
 
 
+def _install_fake_imageio(monkeypatch, tmp_path):
+    import importlib.machinery
+    import sys
+    import types
+
+    calls: dict = {}
+
+    class _Writer:
+        def __init__(self, path, **kwargs):
+            calls["path"] = str(path)
+            calls["kwargs"] = kwargs
+            self._frames = 0
+
+        def append_data(self, arr):
+            self._frames += 1
+
+        def close(self):
+            with open(calls["path"], "wb") as f:
+                f.write(b"fake-h264" * 200 * max(1, self._frames))
+
+    pkg = types.ModuleType("imageio")
+    pkg.__path__ = []
+    pkg.__spec__ = importlib.machinery.ModuleSpec("imageio", loader=None)
+    v2 = types.ModuleType("imageio.v2")
+    v2.__spec__ = importlib.machinery.ModuleSpec("imageio.v2", loader=None)
+    v2.get_writer = lambda path, **kw: _Writer(path, **kw)
+    pkg.v2 = v2
+    ff = types.ModuleType("imageio_ffmpeg")
+    ff.__spec__ = importlib.machinery.ModuleSpec("imageio_ffmpeg", loader=None)
+    monkeypatch.setitem(sys.modules, "imageio", pkg)
+    monkeypatch.setitem(sys.modules, "imageio.v2", v2)
+    monkeypatch.setitem(sys.modules, "imageio_ffmpeg", ff)
+    return calls
+
+
+class TestH264Encoding:
+    def test_prefers_libx264_with_browser_params(self, monkeypatch, tmp_path):
+        from aura_backend.inference.wan_pipeline import write_mp4_video
+
+        PILImage = pytest.importorskip("PIL.Image")
+        calls = _install_fake_imageio(monkeypatch, tmp_path)
+        out = tmp_path / "v.mp4"
+        codec, size = write_mp4_video(out, [PILImage.new("RGB", (64, 80)) for _ in range(3)], 12)
+        assert codec == "h264"
+        assert size > 1000
+        assert calls["kwargs"]["codec"] == "libx264"
+        assert "-pix_fmt" in calls["kwargs"]["ffmpeg_params"]
+        assert "yuv420p" in calls["kwargs"]["ffmpeg_params"]
+        assert "faststart" in " ".join(calls["kwargs"]["ffmpeg_params"])
+
+    def test_neither_backend_raises_import_error(self, monkeypatch, tmp_path):
+        import sys
+
+        from aura_backend.inference import wan_pipeline as wp
+
+        monkeypatch.delitem(sys.modules, "imageio", raising=False)
+        monkeypatch.delitem(sys.modules, "imageio.v2", raising=False)
+        monkeypatch.delitem(sys.modules, "imageio_ffmpeg", raising=False)
+        monkeypatch.delitem(sys.modules, "cv2", raising=False)
+        # Force find_spec to miss for both backends.
+        import importlib.util as _ilu
+
+        real_find = _ilu.find_spec
+        monkeypatch.setattr(
+            _ilu, "find_spec", lambda name: None if name in ("imageio", "imageio_ffmpeg", "cv2") else real_find(name)
+        )
+        # Sanity: the real cv2 must not leak in (laptop has none anyway).
+        assert "cv2" not in sys.modules
+        PILImage = pytest.importorskip("PIL.Image")
+        with pytest.raises(ImportError):
+            wp.write_mp4_video(tmp_path / "v.mp4", [PILImage.new("RGB", (8, 8))], 12)
+
+
 class TestTemporalLattice:
     def test_snap_matches_pipeline_floor(self):
         from aura_backend.inference.wan_config import snap_num_frames

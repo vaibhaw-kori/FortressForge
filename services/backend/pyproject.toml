@@ -41,6 +41,10 @@ gpu = [
   # ftfy.fix_text when installed; without it prompt encoding NameErrors).
   # Pinned stack on RunPod: diffusers==0.33.1, transformers==4.48.3.
   "ftfy>=6.0",
+  # Browser-playable H.264 output (cv2 mp4v does NOT play in <video>).
+  # Bundles its own ffmpeg binary: no apt needed on pods.
+  "imageio>=2.31",
+  "imageio-ffmpeg>=0.5",
   "diffusers==0.33.1",
   "transformers==4.48.3",
   "accelerate==1.4.0",

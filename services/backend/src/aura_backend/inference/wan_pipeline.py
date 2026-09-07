@@ -455,6 +455,53 @@ class ModelLoadingStage(PipelineStage):
 # Stage 6: Inference
 # ============================================================
 
+def write_mp4_video(path, pil_frames: list, fps: float) -> tuple[str, int]:
+    """Write PIL frames to an mp4 file. Returns (codec_used, size_bytes).
+
+    Prefers imageio-ffmpeg (H.264/yuv420p/faststart — playable in every
+    browser <video> element). Falls back to cv2 mp4v, which most browsers
+    CANNOT decode (it 206s fine over HTTP, then the player silently errors
+    and our reel skips the item). The returned codec is recorded in metadata.
+    """
+    import importlib.util as _ilu
+
+    out = Path(path)
+    if (
+        _ilu.find_spec("imageio") is not None
+        and _ilu.find_spec("imageio_ffmpeg") is not None
+        and np is not None
+    ):
+        import imageio.v2 as _imageio
+
+        writer = _imageio.get_writer(
+            str(out),
+            fps=fps,
+            codec="libx264",
+            ffmpeg_params=["-pix_fmt", "yuv420p", "-movflags", "faststart"],
+        )
+        try:
+            for frame in pil_frames:
+                writer.append_data(np.asarray(frame))
+        finally:
+            writer.close()
+        return "h264", out.stat().st_size
+
+    if _ilu.find_spec("cv2") is None:
+        raise ImportError(
+            "video encoding requires imageio-ffmpeg or opencv: "
+            "pip install imageio imageio-ffmpeg"
+        )
+    import cv2
+
+    first = pil_frames[0]
+    h, w = first.size[1], first.size[0]
+    writer = cv2.VideoWriter(str(out), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
+    for frame in pil_frames:
+        writer.write(cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR))
+    writer.release()
+    return "mp4v", out.stat().st_size
+
+
 def _inference_device() -> str:
     """CUDA when available, else CPU (lets contract tests run on CPU boxes)."""
     try:
@@ -684,58 +731,56 @@ class VideoEncodingStage(PipelineStage):
     
     def __call__(self, ctx: "PipelineContext") -> "PipelineContext":
         try:
-            import importlib.util as _ilu
+            import importlib.util as _ilu2
 
-            if _ilu.find_spec("cv2") is None:
-                raise ImportError(
-                    "video encoding requires opencv: pip install -e '.[gpu]'"
-                )
-            import cv2
             if np is None:
                 raise ImportError("video encoding requires numpy: pip install numpy")
             if not _PIL_AVAILABLE or Image is None:
                 raise ImportError("video encoding requires Pillow: pip install Pillow")
-            
+            if _ilu2.find_spec("cv2") is None and (
+                _ilu2.find_spec("imageio") is None or _ilu2.find_spec("imageio_ffmpeg") is None
+            ):
+                raise ImportError(
+                    "video encoding requires imageio-ffmpeg or opencv: "
+                    "pip install imageio imageio-ffmpeg"
+                )
+
             frames = ctx.video_frames
             if not frames:
                 raise RuntimeError("No frames to encode")
-            
+
+            # Normalize everything to PIL RGB first.
+            pil_frames = []
+            for frame in frames:
+                if isinstance(frame, Image.Image):
+                    pil_frames.append(frame.convert("RGB"))
+                elif torch is not None and isinstance(frame, torch.Tensor):
+                    arr = frame.detach().cpu().float().numpy()
+                    if arr.max() <= 1.0:
+                        arr = arr * 255.0
+                    arr = np.clip(arr, 0, 255).astype(np.uint8)
+                    if arr.ndim == 3 and arr.shape[0] in (1, 3, 4):
+                        arr = np.transpose(arr, (1, 2, 0))
+                    pil_frames.append(Image.fromarray(arr[..., :3]))
+                elif isinstance(frame, np.ndarray):
+                    arr = frame
+                    if arr.dtype != np.uint8:
+                        arr = (np.clip(arr, 0, 1) * 255).astype(np.uint8)
+                    pil_frames.append(Image.fromarray(arr))
+                else:
+                    raise TypeError(f"Unexpected frame type: {type(frame)}")
+
             # Create temporary output file
             output_dir = Path(tempfile.gettempdir()) / "aura_generated"
             output_dir.mkdir(parents=True, exist_ok=True)
-            
+
             output_filename = f"{ctx.job_id}.mp4"
             output_path = output_dir / output_filename
             ctx.output_path = str(output_path)
-            
-            # Get video properties
-            first_frame = frames[0]
-            if isinstance(first_frame, Image.Image):
-                h, w = first_frame.size[1], first_frame.size[0]
-            else:
-                h, w = first_frame.shape[:2]
-            
-            fps = ctx.config.fps
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            
-            writer = cv2.VideoWriter(
-                str(output_path),
-                fourcc,
-                ctx.config.fps,
-                (w, h)
-            )
-            
-            for frame in ctx.video_frames:
-                if isinstance(frame, Image.Image):
-                    frame = cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR)
-                elif torch is not None and isinstance(frame, torch.Tensor):
-                    frame = frame.cpu().numpy()
-                    frame = (frame * 255).astype(np.uint8)
-                    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                writer.write(frame)
-            
-            writer.release()
-            
+
+            codec_used, _ = write_mp4_video(output_path, pil_frames, ctx.config.fps)
+            ctx.metadata["video_codec"] = codec_used
+
             # Verify output
             if not output_path.exists():
                 raise RuntimeError("Video file not created")
