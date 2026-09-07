@@ -23,6 +23,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --steps) STEPS="$2"; shift 2;;
     --experience) EXPERIENCE="$2"; shift 2;;
+    # A bare -- only separates script args from passthrough args.
+    --) shift;;
     # Anything else (e.g. --no-cpu-offload for big-VRAM pods) passes
     # straight through to wan_standalone.
     *) EXTRA_ARGS+=("$1"); shift;;
