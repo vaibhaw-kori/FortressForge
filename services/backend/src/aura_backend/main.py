@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import __version__
-from .api import api_v1_router
+from .api import api_legacy_router, api_v1_router
 from .config import get_settings
 from .errors import install_exception_handlers
 from .inference import get_provider_registry
@@ -215,6 +215,7 @@ def create_app() -> FastAPI:
 
     install_exception_handlers(app)
     app.include_router(api_v1_router)
+    app.include_router(api_legacy_router)
     app.include_router(realtime_router)
 
     return app

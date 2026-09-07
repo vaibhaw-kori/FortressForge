@@ -7,6 +7,8 @@ from .v1.captures import router as captures_router
 from .v1.experiences import router as experiences_router
 from .v1.generation import router as generation_router
 from .v1.health import router as health_router
+from .v1.reel import legacy_router as reel_legacy_router
+from .v1.reel import router as reel_router
 from .v1.sessions import router as sessions_router
 from .v1.storage import router as storage_router
 
@@ -18,5 +20,10 @@ api_v1_router.include_router(experiences_router)
 api_v1_router.include_router(generation_router)
 api_v1_router.include_router(storage_router)
 api_v1_router.include_router(admin_router)
+api_v1_router.include_router(reel_router)
+
+# Stage calls /api/reel/queue (without /v1) via vite proxy — keep compat.
+api_legacy_router = APIRouter(prefix="/api")
+api_legacy_router.include_router(reel_legacy_router)
 
 __all__ = ["api_v1_router"]
