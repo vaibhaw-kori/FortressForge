@@ -72,11 +72,18 @@ export type KioskAction =
 export function reducer(state: KioskState, action: KioskAction): KioskState {
   switch (action.type) {
     case 'BOOT_TO_LANGUAGE': {
+      // Idempotent: React StrictMode double-invokes the boot effect in dev,
+      // and NEXT_VISITOR already lands here — never crash on re-entry.
+      if (state.screen === 'LANGUAGE_SELECTION') return state;
       assertTransition(state.screen, 'LANGUAGE_SELECTION');
       return { ...state, screen: 'LANGUAGE_SELECTION' };
     }
     case 'SELECT_LANGUAGE': {
       const direction: Direction = action.language === 'ar' ? 'rtl' : 'ltr';
+      // Idempotent reselect (double-tap): stay, just switch language.
+      if (state.screen === 'EXPERIENCE_SELECTION') {
+        return { ...state, language: action.language, direction };
+      }
       assertTransition(state.screen, 'EXPERIENCE_SELECTION');
       return { ...state, screen: 'EXPERIENCE_SELECTION', language: action.language, direction };
     }
