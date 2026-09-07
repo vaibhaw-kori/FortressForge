@@ -390,9 +390,13 @@ class WanModelLoader:
                 device=self.device,
             )
 
-            # Enable VAE slicing for memory efficiency
-            pipeline.vae.enable_slicing()
-        
+            # Enable VAE slicing for memory efficiency (absent on some
+            # diffusers versions, e.g. AutoencoderKLWan in 0.33.1).
+            try:
+                pipeline.vae.enable_slicing()
+            except Exception:
+                pass
+
         return ModelComponents(
             transformer=transformer,
             vae=vae,
