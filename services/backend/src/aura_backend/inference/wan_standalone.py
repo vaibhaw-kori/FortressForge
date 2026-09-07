@@ -106,15 +106,26 @@ async def run_inference(
     # Run pipeline
     result = await pipeline.run(capture_ref="local:" + image_path)
     
-    # Save output
+    # Save output: the asset url is an HTTP route (or temp path already
+    # cleaned by CleanupStage), so fetch the bytes from durable storage by key.
     if result.get("video_asset"):
-        import shutil
         asset = result["video_asset"]
-        src = asset.get("url") or asset.get("output_ref", "")
-        if src and os.path.exists(src):
-            shutil.copy2(src, output_path)
-            print(f"Video saved to {output_path}")
-    
+        key = asset.get("key") or ""
+        if key:
+            from aura_backend.storage import get_storage
+
+            data = get_storage().get(key)
+            Path(output_path).write_bytes(data)
+            print(f"Video saved to {output_path} ({len(data)} bytes)")
+        else:
+            # Fallback: temp file may still exist if storage copy failed.
+            src = asset.get("url") or asset.get("output_ref", "")
+            if src and os.path.exists(src):
+                import shutil
+
+                shutil.copy2(src, output_path)
+                print(f"Video saved to {output_path}")
+
     return result
 
 

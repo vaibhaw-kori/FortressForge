@@ -233,6 +233,156 @@ class TestGeneratorDeviceMatchesPipeline:
         assert _pipeline_generator_device(_P()) in {"cuda", "cpu"}
 
 
+class _FakeCV2Writer:
+    def __init__(self, path, *args):
+        self._path = str(path)
+        self._frames = 0
+
+    def write(self, frame):
+        self._frames += 1
+
+    def release(self):
+        with open(self._path, "wb") as f:
+            # Realistic payload (>1KB so the file-size validation passes).
+            f.write(b"fake-mp4-frame" * 32 * max(1, self._frames))
+
+
+class _FakeCV2Capture:
+    def __init__(self, path):
+        self._path = str(path)
+
+    def isOpened(self):
+        import os
+
+        return os.path.exists(self._path)
+
+    def get(self, prop):
+        import os
+
+        if prop == _FakeCV2.CAP_PROP_FRAME_COUNT:
+            return 10
+        if prop == _FakeCV2.CAP_PROP_FPS:
+            return 12.0
+        if prop == _FakeCV2.CAP_PROP_FRAME_WIDTH:
+            return 64
+        if prop == _FakeCV2.CAP_PROP_FRAME_HEIGHT:
+            return 80
+        return 0
+
+    def release(self):
+        pass
+
+
+class _FakeCV2:
+    CAP_PROP_FRAME_COUNT = 7
+    CAP_PROP_FPS = 5
+    CAP_PROP_FRAME_WIDTH = 3
+    CAP_PROP_FRAME_HEIGHT = 4
+    COLOR_RGB2BGR = 4
+    VideoWriter = _FakeCV2Writer
+    VideoCapture = _FakeCV2Capture
+
+    @staticmethod
+    def VideoWriter_fourcc(*args):
+        return 0
+
+    @staticmethod
+    def cvtColor(arr, code):
+        return arr
+
+
+def _install_fake_cv2(monkeypatch):
+    import importlib.machinery
+    import sys
+
+    mod = _FakeCV2
+    mod.__spec__ = importlib.machinery.ModuleSpec("cv2", loader=None)
+    monkeypatch.setitem(sys.modules, "cv2", mod)
+
+
+class _FakeStorage:
+    def __init__(self):
+        self.blobs = {}
+
+    def put(self, key, data, content_type="application/octet-stream"):
+        self.blobs[key] = bytes(data)
+        return key
+
+    def get(self, key):
+        return self.blobs[key]
+
+    def get_url(self, key):
+        return f"/api/v1/storage/{key}"
+
+
+class TestEncodeValidateOrdering:
+    def _ctx10(self):
+        from aura_backend.inference.wan_config import WanGenerationConfig, WanModelConfig
+        from aura_backend.inference.wan_pipeline import PipelineContext
+
+        PILImage = pytest.importorskip("PIL.Image")
+        return PipelineContext(
+            job_id="job-order-1",
+            session_id="sess-1",
+            experience_id="aurora",
+            capture_ref="captures/x.jpg",
+            config=WanGenerationConfig(
+                prompt="a cinematic test prompt",
+                width=64,
+                height=80,
+                num_frames=10,
+                fps=12,
+            ),
+            model_config=WanModelConfig(),
+        ), [PILImage.new("RGB", (64, 80)) for _ in range(10)]
+
+    def test_encode_keeps_file_validation_passes_cleanup_removes(
+        self, monkeypatch
+    ):
+        _install_fake_cv2(monkeypatch)
+        import aura_backend.storage as storage_mod
+        from aura_backend.inference.wan_pipeline import (
+            CleanupStage,
+            OutputValidationStage,
+            VideoEncodingStage,
+        )
+
+        fake_storage = _FakeStorage()
+        monkeypatch.setattr(storage_mod, "get_storage", lambda: fake_storage)
+
+        ctx, frames = self._ctx10()
+        ctx.video_frames = frames
+        ctx = VideoEncodingStage()(ctx)
+        import os
+
+        # THE regression: encoder must NOT delete the temp file; validation
+        # runs next and needs it on disk.
+        assert os.path.exists(ctx.output_path), "encoder deleted file before validation"
+        ctx = OutputValidationStage()(ctx)
+        assert ctx.metadata.get("validation_passed") is True
+        assert ctx.video_asset is not None
+        # Durable copy exists under the job key.
+        assert ctx.video_asset.key in fake_storage.blobs
+        ctx = CleanupStage()(ctx)
+        assert not os.path.exists(ctx.output_path), "cleanup must remove temp file"
+        assert ctx.metadata.get("cleanup_done") is True
+
+    def test_validation_fails_cleanly_when_file_truly_missing(self, monkeypatch):
+        _install_fake_cv2(monkeypatch)
+        from aura_backend.errors import ValidationFailed
+        from aura_backend.inference.wan_pipeline import (
+            OutputValidationStage,
+            PipelineError,
+        )
+
+        ctx, _ = self._ctx10()
+        ctx.output_path = "/definitely/not/here.mp4"
+        with pytest.raises(PipelineError) as ei:
+            OutputValidationStage()(ctx)
+        assert isinstance(ei.value.original_error, ValidationFailed)
+        assert "not found" in str(ei.value.original_error).lower()
+
+
 class TestTemporalLattice:
     def test_snap_matches_pipeline_floor(self):
         from aura_backend.inference.wan_config import snap_num_frames

@@ -748,22 +748,19 @@ class VideoEncodingStage(PipelineStage):
             ctx.metadata["output_size_bytes"] = file_size
             ctx.metadata["encoding_done"] = True
             
-            # Generate output URL via storage (will be signed if private)
+            # Generate output URL via storage (will be signed if private).
+            # NOTE: the temp file must survive until OutputValidationStage
+            # runs — only CleanupStage (stage 10) may delete it.
             from ..storage import get_storage
 
             try:
-                # Store immediately to durable storage so temp can be cleaned
+                # Store immediately to durable storage
                 data = output_path.read_bytes()
                 storage_key = f"generated/{ctx.job_id[:2]}/{ctx.job_id}.mp4"
                 get_storage().put(storage_key, data, content_type="video/mp4")
                 ctx.output_url = get_storage().get_url(storage_key)
                 ctx.metadata["storage_key"] = storage_key
                 ctx.metadata["output_url"] = ctx.output_url
-                # Clean temp file after successful store
-                try:
-                    output_path.unlink(missing_ok=True)
-                except Exception:
-                    pass
             except Exception:
                 # Fallback: keep temp path if storage fails
                 ctx.output_url = f"/api/v1/storage/generated/{ctx.job_id[:2]}/{ctx.job_id}.mp4"
@@ -877,11 +874,19 @@ class CleanupStage(PipelineStage):
             
             # Force garbage collection
             gc.collect()
-            
+
             # Clear temporary tensors
             ctx.capture_tensor = None
             # Keep video_frames for potential debugging, but could clear
             # ctx.video_frames = []
+
+            # Delete the temp video file — but ONLY after a durable storage
+            # copy exists (encoding stage sets metadata["storage_key"]).
+            if ctx.metadata.get("storage_key") and ctx.output_path:
+                try:
+                    Path(ctx.output_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
             
             ctx.metadata["cleanup_done"] = True
             ctx.metadata["total_time"] = time.time() - ctx.started_at
