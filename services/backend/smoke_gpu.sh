@@ -18,11 +18,14 @@ set -euo pipefail
 
 STEPS=16
 EXPERIENCE=aurora
+EXTRA_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --steps) STEPS="$2"; shift 2;;
     --experience) EXPERIENCE="$2"; shift 2;;
-    *) echo "unknown arg: $1" >&2; exit 2;;
+    # Anything else (e.g. --no-cpu-offload for big-VRAM pods) passes
+    # straight through to wan_standalone.
+    *) EXTRA_ARGS+=("$1"); shift;;
   esac
 done
 
@@ -90,7 +93,7 @@ if [[ "${SMOKE_BACKGROUND:-0}" == "1" ]]; then
   # Unattended mode (survives SSH drops); caller tails /tmp/smoke.log.
   nohup python -m aura_backend.inference.wan_standalone \
     --image "$INPUT_IMG" --experience "$EXPERIENCE" \
-    --output "$OUTPUT_MP4" --steps "$STEPS" > /tmp/smoke.log 2>&1 &
+    --output "$OUTPUT_MP4" --steps "$STEPS" "${EXTRA_ARGS[@]}" > /tmp/smoke.log 2>&1 &
   echo "render started pid $! — follow with: tail -f /tmp/smoke.log"
   echo "verify at the end with: ls -la /tmp/smoke.mp4"
   exit 0
@@ -99,7 +102,7 @@ fi
 set +e
 python -m aura_backend.inference.wan_standalone \
   --image "$INPUT_IMG" --experience "$EXPERIENCE" \
-  --output "$OUTPUT_MP4" --steps "$STEPS" 2>&1 | tee /tmp/smoke.log
+  --output "$OUTPUT_MP4" --steps "$STEPS" "${EXTRA_ARGS[@]}" 2>&1 | tee /tmp/smoke.log
 CODE=${PIPESTATUS[0]:-$?}
 set -e
 if [[ $CODE -ne 0 ]]; then

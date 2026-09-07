@@ -331,7 +331,7 @@ class WanModelLoader:
                 device_map="auto",
                 max_memory={0: "11GiB", "cpu": "12GiB"},
                 offload_folder=_offload_folder,
-                offload_state_dict=True,
+                offload_state_dict=bool(os.environ.get("AURA_WAN_DISK_OFFLOAD", "")),
                 low_cpu_mem_usage=True,
             )
         else:
