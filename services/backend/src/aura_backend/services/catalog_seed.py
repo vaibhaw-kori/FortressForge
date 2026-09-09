@@ -63,7 +63,7 @@ SEED_EXPERIENCES: list[Experience] = [
             loop=False,
         ),
         model_params=ModelParams(
-            num_inference_steps=28,
+            num_inference_steps=8,
             guidance_scale=7.5,
             motion_bucket_id=180,
             seed_policy="random",
@@ -126,7 +126,7 @@ SEED_EXPERIENCES: list[Experience] = [
             loop=False,
         ),
         model_params=ModelParams(
-            num_inference_steps=30,
+            num_inference_steps=8,
             guidance_scale=7.0,
             motion_bucket_id=160,
             seed_policy="random",
