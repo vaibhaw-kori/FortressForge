@@ -278,12 +278,18 @@ class ImagePreprocessingStage(PipelineStage):
             ctx.metadata["original_size"] = image.size
             ctx.metadata["original_mode"] = image.mode
             
-            # Resize to target resolution if needed — camera-agnostic center-crop to 9:16
-            # Laptop is HP Wide Vision HD 720p (1280x720 16:9 landscape, fixed focus);
-            # a future upgraded camera may be 1080p/4K. We must never stretch.
-            # Logic mirrors smoke_gpu.sh: crop to target aspect, then LANCZOS resize.
-            target_width = ctx.config.width
-            target_height = ctx.config.height
+            # Resize to target resolution — shared quality enforces 480x832 native for WAN 480P.
+            # Camera 1280x720 (16:9) -> crop 415x720 -> resize 480x832 = 1.15× upscale (vs 405→720=1.78× blur).
+            # Future 1080p/4K uses same logic: crop to 9:16 then LANCZOS, no stretch.
+            # Use GenerationQualityConfig directly so preprocessing matches inference, not stale ctx.config.
+            from .quality_config import GenerationQualityConfig
+
+            _quality = GenerationQualityConfig()
+            target_width = _quality.width
+            target_height = _quality.height
+            # Also persist to ctx.config so later stages (inference) stay consistent
+            ctx.config.width = target_width
+            ctx.config.height = target_height
             target_aspect = target_width / target_height  # 9/16 = 0.5625 for portrait
             
             if image.size != (target_width, target_height):
@@ -384,21 +390,35 @@ class ExperienceConfigurationStage(PipelineStage):
                 visitor_description="a person",  # Could be enhanced with demographic info
             )
             
+            # === Shared Quality Layer (common for Aurora/Mirage/Pulse) ===
+            # Do NOT re-tune per-theme here — theme style stays in catalog_seed,
+            # quality (identity/anatomy/temporal) is enforced centrally.
+            from .quality_config import GenerationQualityConfig
+
+            quality = GenerationQualityConfig()  # default = TEST_B stable point: 480x832 16 steps 6.8/120/0.52
+
+            # Append shared identity lock to positive prompt (keeps theme style intact)
+            if quality.identity_positive_suffix not in prompt:
+                prompt = prompt.rstrip(".") + "." + quality.identity_positive_suffix + "."
+
             # Update config with experience-specific settings
             ctx.config.prompt = prompt
-            # Preserve per-experience negative_prompt from DB (catalog_seed) if already set;
-            # otherwise fall back to DEFAULT_NEGATIVE_PROMPT. This keeps Pulse's detailed
-            # negative (dark, close-up, glitch) from being overwritten.
-            if not ctx.config.negative_prompt:
-                ctx.config.negative_prompt = DEFAULT_NEGATIVE_PROMPT
-            
-            # Apply experience-specific overrides if any — Pulse now premium stable (was 220/8.0 aggressive)
-            experience_overrides = {
-                "aurora": {"motion_bucket_id": 180, "guidance_scale": 7.5},
-                "mirage": {"motion_bucket_id": 160, "guidance_scale": 7.0},
-                "pulse": {"motion_bucket_id": 150, "guidance_scale": 7.0},
-                "driftwood": {"motion_bucket_id": 120, "guidance_scale": 6.5},
-            }
+            # Shared negative identity constraints — merge with per-experience negative
+            base_neg = ctx.config.negative_prompt or DEFAULT_NEGATIVE_PROMPT
+            if quality.identity_negative_add not in base_neg:
+                base_neg = base_neg.rstrip(", ") + ", " + quality.identity_negative_add
+            ctx.config.negative_prompt = base_neg
+
+            # Apply shared quality overrides (resolution/steps/strength) — theme motion/guidance
+            # are now driven by quality, not per-theme scatter.
+            ctx.config.width = quality.width
+            ctx.config.height = quality.height
+            ctx.config.num_inference_steps = quality.num_inference_steps
+            ctx.config.guidance_scale = quality.guidance_scale
+            ctx.config.motion_bucket_id = quality.motion_bucket_id
+            ctx.config.strength = quality.strength
+            # Keep per-theme motion_bucket/guidance override removed — quality is single source
+            experience_overrides = {}
             
             if ctx.experience_id in experience_overrides:
                 overrides = experience_overrides[ctx.experience_id]
