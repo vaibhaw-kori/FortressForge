@@ -195,7 +195,7 @@ SEED_EXPERIENCES: list[Experience] = [
             loop=False,
         ),
         model_params=ModelParams(
-            num_inference_steps=28,
+            num_inference_steps=8,
             guidance_scale=7.0,
             motion_bucket_id=150,
             seed_policy="random",
