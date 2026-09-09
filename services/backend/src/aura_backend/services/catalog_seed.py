@@ -157,45 +157,51 @@ SEED_EXPERIENCES: list[Experience] = [
     Experience(
         id="pulse",
         display_name="Pulse",
-        description="High-contrast geometric waves synced to a beat.",
-        duration_sec=3.0,
-        fps=24,
+        description="Luminous magenta membrane — same visitor, cinematic, controlled.",
+        duration_sec=4.0,
+        fps=12,
         resolution="720x1280",
         aspect_ratio="9:16",
         thumbnail_url=None,
         enabled=True,
         display_order=30,
         prompt=(
-            "Bold kinetic portrait of the visitor with high-contrast geometric waves. "
-            "Magenta and white color blocks, sharp motion synced to a beat, "
-            "fast parallax camera move. Music video aesthetic."
+            "Premium cinematic portrait of the visitor, same person, same face, same clothing, "
+            "waist-up medium shot centered, face clearly visible 35% of frame height, breathing room top and bottom, "
+            "do not crop face or head, inside a luminous Pulse membrane of flowing magenta-white geometric waves "
+            "moving slowly behind subject, seamless studio cyclorama, shallow depth of field f/2.8, 35mm film look, "
+            "photorealistic, 8k, soft volumetric magenta key light with white fill and subtle rim, gentle 3% slow push-in "
+            "camera, waves breathing 2cm/s, subject subtle micro-movement, same lighting consistent, no parallax snap, "
+            "high production value, controlled, identity-preserving, temporally stable, large-screen ready."
         ),
         negative_prompt=(
-            "blurry, low quality, deformed face, extra limbs, watermark, text, "
-            "soft lighting, muted colors"
+            "blurry, low quality, deformed face, extra limbs, missing limbs, fused limbs, watermark, text, logo, "
+            "dark, near-black, underexposed, overexposed, glitch, artifacts, jpeg artifacts, "
+            "extreme close-up, face cropped, head cropped, excessive zoom, fast parallax, high contrast wash, "
+            "flicker, morphing, deformed, bad anatomy, duplicate, muted colors when not requested"
         ),
         visual_style=VisualStyle(
-            aesthetic="kinetic",
+            aesthetic="cinematic",
             palette_name="pulse",
-            keywords=("kinetic", "geometric", "wave", "beat", "neon"),
-            lighting="high_key",
+            keywords=("pulse", "membrane", "magenta", "luminous", "cinematic", "controlled"),
+            lighting="soft",
             texture="smooth",
         ),
         motion=MotionConfig(
-            strength=0.85,
-            camera_motion="parallax",
-            easing="ease_out",
-            intensity=0.8,
-            loop=True,
+            strength=0.60,
+            camera_motion="dolly",
+            easing="ease_in_out",
+            intensity=0.45,
+            loop=False,
         ),
         model_params=ModelParams(
-            num_inference_steps=22,
-            guidance_scale=8.0,
-            motion_bucket_id=220,
+            num_inference_steps=28,
+            guidance_scale=7.0,
+            motion_bucket_id=150,
             seed_policy="random",
             fixed_seed=None,
-            strength=0.75,
-            extra={"identity_weight": 0.75, "style_weight": 0.85},
+            strength=0.60,
+            extra={"identity_weight": 0.85, "style_weight": 0.65},
         ),
         theme=ExperienceTheme(
             palette={"primary": "#ff3b8b", "accent": "#ffffff", "bg": "#0b0d12"},

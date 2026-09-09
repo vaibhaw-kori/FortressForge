@@ -278,12 +278,30 @@ class ImagePreprocessingStage(PipelineStage):
             ctx.metadata["original_size"] = image.size
             ctx.metadata["original_mode"] = image.mode
             
-            # Resize to target resolution if needed
+            # Resize to target resolution if needed — camera-agnostic center-crop to 9:16
+            # Laptop is HP Wide Vision HD 720p (1280x720 16:9 landscape, fixed focus);
+            # a future upgraded camera may be 1080p/4K. We must never stretch.
+            # Logic mirrors smoke_gpu.sh: crop to target aspect, then LANCZOS resize.
             target_width = ctx.config.width
             target_height = ctx.config.height
+            target_aspect = target_width / target_height  # 9/16 = 0.5625 for portrait
             
             if image.size != (target_width, target_height):
-                # Use high-quality resize
+                w, h = image.size
+                cur_aspect = w / h
+                if abs(cur_aspect - target_aspect) > 0.01:
+                    if cur_aspect > target_aspect:
+                        # Too wide (e.g. 1280x720 landscape → 720p, or 1920x1080) → crop width
+                        new_w = int(h * target_aspect)
+                        x0 = (w - new_w) // 2
+                        image = image.crop((x0, 0, x0 + new_w, h))
+                        ctx.warnings.append(f"Center-cropped width {w}x{h} -> {new_w}x{h} to match {target_width}x{target_height}")
+                    else:
+                        # Too tall → crop height
+                        new_h = int(w / target_aspect)
+                        y0 = (h - new_h) // 2
+                        image = image.crop((0, y0, w, y0 + new_h))
+                        ctx.warnings.append(f"Center-cropped height {w}x{h} -> {w}x{new_h} to match {target_width}x{target_height}")
                 image = image.resize((target_width, target_height), Image.LANCZOS)
                 ctx.warnings.append(f"Resized from {ctx.metadata['original_size']} to ({target_width}, {target_height})")
             
@@ -368,13 +386,17 @@ class ExperienceConfigurationStage(PipelineStage):
             
             # Update config with experience-specific settings
             ctx.config.prompt = prompt
-            ctx.config.negative_prompt = DEFAULT_NEGATIVE_PROMPT
+            # Preserve per-experience negative_prompt from DB (catalog_seed) if already set;
+            # otherwise fall back to DEFAULT_NEGATIVE_PROMPT. This keeps Pulse's detailed
+            # negative (dark, close-up, glitch) from being overwritten.
+            if not ctx.config.negative_prompt:
+                ctx.config.negative_prompt = DEFAULT_NEGATIVE_PROMPT
             
-            # Apply experience-specific overrides if any
+            # Apply experience-specific overrides if any — Pulse now premium stable (was 220/8.0 aggressive)
             experience_overrides = {
                 "aurora": {"motion_bucket_id": 180, "guidance_scale": 7.5},
                 "mirage": {"motion_bucket_id": 160, "guidance_scale": 7.0},
-                "pulse": {"motion_bucket_id": 220, "guidance_scale": 8.0},
+                "pulse": {"motion_bucket_id": 150, "guidance_scale": 7.0},
                 "driftwood": {"motion_bucket_id": 120, "guidance_scale": 6.5},
             }
             

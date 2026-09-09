@@ -227,11 +227,13 @@ EXPERIENCE_PROMPT_TEMPLATES = {
         "particle effects, dreamy atmosphere, photorealistic"
     ),
     "pulse": (
-        "Bold kinetic portrait of {visitor} with high-contrast geometric waves, "
-        "magenta and white color blocks, sharp motion synced to a beat, "
-        "fast parallax camera move. Music video aesthetic, "
-        "high contrast, neon colors, dynamic motion, "
-        "glitch art style, cyberpunk aesthetic, sharp edges"
+        "Premium cinematic portrait of {visitor}, same person, same face, same clothing, waist-up medium shot centered, "
+        "face clearly visible 35% of frame height, breathing room top and bottom, do not crop face or head, "
+        "inside a luminous Pulse membrane of flowing magenta-white geometric waves moving slowly behind subject, "
+        "seamless studio cyclorama, shallow depth of field f/2.8, 35mm film look, photorealistic, 8k, "
+        "soft volumetric magenta key light with white fill and subtle rim, gentle 3% slow push-in camera, "
+        "waves breathing 2cm/s, subject subtle micro-movement, same lighting consistent, no parallax snap, "
+        "high production value, controlled, identity-preserving, temporally stable, large-screen ready"
     ),
     "driftwood": (
         "Quiet cinematic portrait of {visitor} on a moonlit shoreline. "

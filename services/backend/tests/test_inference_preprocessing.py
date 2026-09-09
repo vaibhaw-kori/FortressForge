@@ -181,7 +181,7 @@ class TestExperienceConfig:
         [
             ("aurora", 180, 7.5),
             ("mirage", 160, 7.0),
-            ("pulse", 220, 8.0),
+            ("pulse", 150, 7.0),
             ("driftwood", 120, 6.5),
         ],
     )
